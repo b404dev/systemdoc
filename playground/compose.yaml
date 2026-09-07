@@ -1,0 +1,56 @@
+name: systemdoc-playground
+
+x-defaults: &defaults
+  restart: "no"
+  cpus: 0.25
+  mem_limit: 96m
+  logging:
+    driver: json-file
+    options:
+      max-size: "2m"
+      max-file: "2"
+
+services:
+  web:
+    <<: *defaults
+    image: nginx:alpine
+    ports:
+      - "127.0.0.1::80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  redis:
+    <<: *defaults
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      - /data:size=32m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  worker:
+    <<: *defaults
+    image: alpine:3
+    mem_limit: 32m
+    init: true
+    command:
+      - /bin/sh
+      - -c
+      - |
+        trap 'echo "INFO worker stopping"; exit 0' TERM INT
+        count=0
+        while :; do
+          count=$$((count + 1))
+          echo "INFO heartbeat=$$count worker running"
+          if [ $$((count % 10)) -eq 0 ]; then
+            echo "WARNING playground log-colour sample; no action required"
+          fi
+          sleep 3 & wait $$!
+        done

@@ -1,0 +1,14 @@
+[{
+  "Id": "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef012345",
+  "Name": "/website-web-1", "Created": "2026-09-06T09:00:00Z", "Image": "sha256:abc123", "Platform": "linux", "Driver": "overlay2",
+  "RestartCount": 2,
+  "State": {"Status":"running","Running":true,"Pid":2401,"ExitCode":0,"StartedAt":"2026-09-06T09:01:00Z","FinishedAt":"0001-01-01T00:00:00Z","Health":{"Status":"healthy","FailingStreak":0}},
+  "Config": {"Image":"nginx:alpine","Hostname":"website-web","User":"101","WorkingDir":"/usr/share/nginx/html","Entrypoint":["/docker-entrypoint.sh"],"Cmd":["nginx","-g","daemon off;"],"Env":["DEMO_SECRET=not-for-overview"],"ExposedPorts":{"80/tcp":{},"443/tcp":{}},"Labels":{"com.docker.compose.project":"website","com.docker.compose.service":"web","app.owner":"platform"}},
+  "HostConfig": {"NetworkMode":"website_default","Runtime":"runc","RestartPolicy":{"Name":"unless-stopped"},"PortBindings":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]},"LogConfig":{"Type":"json-file"},"Memory":268435456,"NanoCpus":1000000000},
+  "Mounts": [
+    {"Type":"volume","Name":"website_data","Source":"/var/lib/docker/volumes/website_data/_data","Destination":"/data","Driver":"local","RW":true},
+    {"Type":"bind","Source":"/srv/website/nginx.conf","Destination":"/etc/nginx/nginx.conf","RW":false,"Propagation":"rprivate"},
+    {"Type":"tmpfs","Destination":"/tmp","RW":true}
+  ],
+  "NetworkSettings": {"Ports":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"},{"HostIp":"::1","HostPort":"8080"}],"443/tcp":null},"Networks":{"website_default":{"IPAddress":"172.20.0.4","Gateway":"172.20.0.1","MacAddress":"02:42:ac:14:00:04","GlobalIPv6Address":"fd00::4","Aliases":["web","website-web-1"]}}}
+}]
