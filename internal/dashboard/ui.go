@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ type workspace struct {
 	pages                           *tview.Pages
 	root                            *tview.Flex
 	header, summary, detail, footer *tview.TextView
+	storyline                       *tview.TextView
 	table                           *tview.Table
 	search                          *tview.InputField
 	mode, tab, theme                int
@@ -54,14 +56,20 @@ type workspace struct {
 	commandBar, tabBar, telemetry   *tview.Flex
 	selectionCard                   *tview.TextView
 	loadingIndicator                *tview.TextView
+	pollButton                      *tview.Button
+	splashView                      *tview.TextView
 	footerBar                       *tview.Flex
 	loadingAnimation                atomic.Bool
 	cards                           [4]*tview.TextView
 	modeButtons                     [2]*tview.Button
 	tabButtons                      [5]*tview.Button
 	toolbarButtons                  []*tview.Button
+	workspaceButtons                []*tview.Button
 	quickFilter, sortMode, zoom     int
 	fleetHistory                    [2][]fleetSample
+	hostUsage                       hostUtilisation
+	hostCPUHistory                  []float64
+	hostMemoryHistory               []float64
 	lastRefresh                     [2]time.Time
 	backendError                    [2]bool
 	body                            *tview.Flex
@@ -73,6 +81,8 @@ type workspace struct {
 	metrics                         map[string][]metricSample
 	activity                        []activityEvent
 	commandHistory                  []string
+	workloadHistory                 map[string][]workloadSignal
+	hostLabel                       string
 }
 
 type Options struct {
@@ -113,6 +123,7 @@ func Run(options Options) error {
 			w.startInventory(w.mode)
 			w.startInventory(1 - w.mode)
 			go w.refreshLoop()
+			go w.hostMetricsLoop(runtime.NumCPU())
 			go func() {
 				select {
 				case <-ctx.Done():
@@ -133,12 +144,12 @@ func Run(options Options) error {
 func textView() *tview.TextView { return tview.NewTextView().SetDynamicColors(false) }
 
 func newWorkspace(ctx context.Context, user bool) *workspace {
-	w := &workspace{app: tview.NewApplication(), ctx: ctx, user: user, sortMode: 1, settings: settings{RefreshSeconds: 5}}
+	w := &workspace{app: tview.NewApplication(), ctx: ctx, user: user, sortMode: 1, settings: settings{SettingsVersion: 1, Theme: "Cathedral", RefreshSeconds: 5, PaneRatio: 46, NerdIcons: true, GraphMode: "blocks"}, workloadHistory: map[string][]workloadSignal{}}
 	w.header, w.summary, w.detail, w.footer = textView(), textView(), textView(), textView()
 	w.detail.SetDynamicColors(true).SetScrollable(true).SetWrap(w.settings.WrapLogs).SetBorder(true).SetTitle(" Inspector ")
 	w.table = tview.NewTable().SetSelectable(true, false).SetFixed(1, 0)
 	w.table.SetBorder(true).SetTitle(" Workloads ")
-	w.search = tview.NewInputField().SetLabel(" / Filter  ").SetFieldWidth(0)
+	w.search = tview.NewInputField().SetLabel(" / " + w.iconLabel(iconSearch, "Filter  ")).SetFieldWidth(0)
 	w.search.SetChangedFunc(w.filterChanged)
 	w.search.SetDoneFunc(func(tcell.Key) { w.app.SetFocus(w.table) })
 	w.table.SetSelectionChangedFunc(func(row, _ int) {
@@ -200,10 +211,18 @@ func (w *workspace) applyTheme() {
 }
 
 func (w *workspace) chrome() {
-	host, _ := os.Hostname()
-	contextLabel := "system"
+	w.updateHeader()
+	p := w.palette()
+	w.styleNavigation()
+	w.footer.SetText(fmt.Sprintf(" [%s::b]0[-::-] deck  [%s::b]/[-::-] search  z expand  [%s::b]x[-::-] map  I story  G graphics  [%s::b]R[-::-] restart  a actions  ? help  q quit", p.glow, p.accent, p.glow, p.warning))
+	w.updateDashboard()
+
+}
+
+func (w *workspace) contextLabel() string {
+	contextLabel := serviceManager() + " / system"
 	if w.user {
-		contextLabel = "user"
+		contextLabel = serviceManager() + " / user"
 	}
 	if w.mode == 1 {
 		contextLabel = os.Getenv("DOCKER_CONTEXT")
@@ -211,29 +230,119 @@ func (w *workspace) chrome() {
 			contextLabel = "Docker CLI endpoint"
 		}
 	}
+	return contextLabel
+}
 
-	brand := "SYSTEMDOC"
-	if w.settings.NerdIcons {
-		brand = "\uf17c " + brand
-		if w.mode == 1 {
-			brand = "\uf308 SYSTEMDOC"
-		}
+func (w *workspace) hostName() string {
+	if w.hostLabel != "" {
+		return w.hostLabel
 	}
+	host, _ := os.Hostname()
+	return host
+}
+
+func (w *workspace) updateHeader() {
+	contextLabel := w.contextLabel()
 	p := w.palette()
-	wordmark := gradientText("SYSTEMDOC", p.accent, p.glow)
-	if brand != "SYSTEMDOC" {
-		wordmark = strings.TrimSuffix(brand, "SYSTEMDOC") + wordmark
+	if mastheadHeight(w.lastWidth, w.lastHeight) == 1 {
+		w.header.SetText(w.masthead(contextLabel, "", "", w.lastWidth, w.lastHeight))
+		return
 	}
-	w.header.SetText(fmt.Sprintf(" [%s]◈ [::b]%s[-::-]  [%s]WORKLOAD CONTROL[-]   [%s]%s / %s[-]", p.accent, wordmark, p.muted, p.text, tview.Escape(clean(host)), tview.Escape(clean(contextLabel))))
-	w.styleNavigation()
-	w.footer.SetText(fmt.Sprintf(" [%s::b]/[-::-] search  [%s::b]i[-::-] active  A states  S sort  z expand  [%s::b]L[-::-] logs  [%s::b]R[-::-] restart  a actions  ? help  q quit", p.accent, p.accent, p.accent, p.warning))
-	w.updateDashboard()
+	totals := fleetTotals(w.items[w.mode])
+	health, healthColour := w.iconLabel(iconHealthy, "NOMINAL"), p.success
+	if totals.attention > 0 {
+		health, healthColour = fmt.Sprintf("%s %d SIGNAL", w.icon(iconAttention), totals.attention), p.error
+	}
+	sampled := "awaiting sample"
+	if !w.lastRefresh[w.mode].IsZero() {
+		sampled = "sample " + w.lastRefresh[w.mode].Format("15:04:05")
+	}
+	detail := fmt.Sprintf("[%s]%d workloads · %d active · %s[-]   %s   [%s]x %s CONSTELLATION[-]  [%s]I %s STORYLINE[-]  %s",
+		p.muted, len(w.items[w.mode]), totals.active, sampled, hostReadout(p, w.hostUsage), p.glow, w.icon(iconConstellation), p.warning, w.icon(iconStoryline), w.signalsHint(p))
+	w.header.SetText(w.masthead(contextLabel, fmt.Sprintf("[%s::b]%s[-::-]", healthColour, health), detail, w.lastWidth, w.lastHeight))
+}
 
+func dashboardHeader(p palette, icon, host, contextLabel string) string {
+	return fmt.Sprintf(" [%s::b]%s[-::-] %s  [%s]// SYSTEM OBSERVATORY[-]   [%s]%s / %s[-]", p.accent, icon, brandWordmark(p), p.muted, p.text, tview.Escape(clean(host)), tview.Escape(clean(contextLabel)))
+}
+
+// mastheadHeight is one rule for every page: two lines and a gradient rule
+// when the terminal is roomy, one identity line when it is not. Sharing the
+// rule is what keeps the top bar from jumping as the user moves between suites.
+func mastheadHeight(width, height int) int {
+	if width >= 100 && height >= 28 {
+		return 3
+	}
+	return 1
+}
+
+// masthead composes the shared top bar. The first line is identical on every
+// page; the second carries page context, and the rule beneath is painted by
+// paintSurfaces when the height allows it.
+// trailer is trusted markup appended to the identity line when the masthead
+// has room - the main dashboard puts fleet health there, where a failing
+// workload is seen before anything else.
+func (w *workspace) masthead(contextLabel, trailer, detailLine string, width, height int) string {
+	p := w.palette()
+	first := dashboardHeader(p, w.icon(iconEye), w.hostName(), contextLabel)
+	if mastheadHeight(width, height) == 1 {
+		return first
+	}
+	if trailer != "" {
+		first += "   " + trailer
+	}
+	return first + "\n " + detailLine
+}
+
+// signalsHint names the active glyph mode the same way on every page.
+func (w *workspace) signalsHint(p palette) string {
+	return fmt.Sprintf("[%s]G %s SIGNALS[-]", p.accent, strings.ToUpper(graphMode(w.settings.GraphMode)))
+}
+
+// The masthead keeps the wordmark compact; the large block letterform belongs
+// to the splash, where it costs no working rows.
+func brandWordmark(p palette) string {
+	return "[::b]" + gradientText("SYSTEMDOC", p.accent, p.glow) + "[::-]"
+}
+
+// Host utilisation sits beside the workload counts in the masthead so the
+// machine's own load is visible without opening a panel. Missing readings stay
+// missing rather than rendering as zero.
+// hostReadoutFor omits the readout when the masthead has no room for it, so a
+// narrow terminal shows a complete identity row rather than a clipped one.
+func hostReadoutFor(p palette, usage hostUtilisation, width int) string {
+	if width > 0 && width < 100 {
+		return ""
+	}
+	return "   " + hostReadout(p, usage)
+}
+
+func hostReadout(p palette, usage hostUtilisation) string {
+	// Each figure takes the severity ramp, so the masthead answers "is the
+	// machine under pressure" before the number is read. A missing reading
+	// stays muted rather than borrowing a colour that means something.
+	cpu, memory, cpuHue, memoryHue := "—", "—", p.muted, p.muted
+	if usage.cpuOK {
+		cpu, cpuHue = fmt.Sprintf("%.0f%%", usage.cpuPercent), pressureHue(p, int(usage.cpuPercent))
+	}
+	if usage.memOK {
+		memory, memoryHue = fmt.Sprintf("%.0f%%", usage.memPercent), pressureHue(p, int(usage.memPercent))
+	}
+	return fmt.Sprintf("[%s]HOST[-] [%s::b]CPU %s[-::-] [%s]·[-] [%s::b]MEM %s[-::-]", p.muted, cpuHue, cpu, p.muted, memoryHue, memory)
 }
 
 func (w *workspace) queue(update func()) {
 	if w.ctx.Err() == nil {
 		w.app.QueueUpdateDraw(update)
+	}
+}
+
+// queueQuiet applies state without forcing a frame. Background samplers use
+// it so the screen is drawn by the one-second dashboard tick that already
+// exists, rather than once per sampler on top of it.
+func (w *workspace) queueQuiet(update func()) {
+	if w.ctx.Err() == nil {
+		w.app.QueueUpdate(update)
 	}
 }
 
@@ -255,7 +364,11 @@ func (w *workspace) renderTable() {
 	}
 	if w.zoom == 1 {
 		if w.mode == 0 {
-			headers = append(headers, "BOOT", "SUBSTATE", "DESCRIPTION")
+			enablement := "BOOT"
+			if usesLaunchd() {
+				enablement = "OVERRIDE"
+			}
+			headers = append(headers, enablement, "SUBSTATE", "DESCRIPTION")
 		} else {
 			headers = append(headers, "PROJECT", "HEALTH / STATUS", "IMAGE")
 		}
@@ -271,13 +384,13 @@ func (w *workspace) renderTable() {
 	for i, item := range w.visible {
 		name := item.Name
 		if w.recentlyChanged(item.ID) {
-			name = "› " + name
+			name = w.icon(iconChanged) + " " + name
 		}
 		if w.isFavorite(item.ID) {
-			name = "★ " + name
+			name = w.icon(iconFavorite) + " " + name
 		}
 		name = "  " + name
-		values := []string{name, stateSymbol(item) + " " + item.State, available(item.CPU), available(item.Memory)}
+		values := []string{name, stateSymbol(item, w.settings.NerdIcons) + " " + item.State, available(item.CPU), available(item.Memory)}
 		if w.zoom == 1 {
 			context := available(item.Enablement)
 			if w.mode == 1 {
@@ -290,8 +403,16 @@ func (w *workspace) renderTable() {
 			if col == 1 {
 				colour = stateColour(item, p)
 			}
+			// CPU takes the severity ramp used everywhere a share of the
+			// machine appears. Memory has no honest per-workload ceiling,
+			// so it keeps the identity hue rather than a graded colour.
 			if col == 2 || col == 3 {
 				colour = p.accent
+			}
+			if col == 2 {
+				if cpuShare, ok := cpuValue(item.CPU); ok {
+					colour = pressureHue(p, int(cpuShare))
+				}
 			}
 			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(colour))
 			if col == 0 {
@@ -411,7 +532,7 @@ func (w *workspace) showDetail() {
 				if err == nil {
 					w.cacheDetail(key, output)
 				}
-				if tab == 3 && mode == 0 && err == nil {
+				if tab == 3 && mode == 0 && !usesLaunchd() && err == nil {
 					output = w.resourceOutput(selected.ID, output)
 				}
 				if tab == 3 && mode == 1 && err == nil {
@@ -495,6 +616,14 @@ func (w *workspace) input(event *tcell.EventKey) *tcell.EventKey {
 		w.detail.SetTitle(" Logs · paused · g resumes ")
 	}
 	switch event.Rune() {
+	case '0':
+		w.controlDeck()
+	case ',':
+		w.pollingDialog()
+	case '[':
+		w.resizePanes(-5)
+	case ']':
+		w.resizePanes(5)
 	case ' ':
 		if w.tab == 1 {
 			w.logPaused = !w.logPaused
@@ -517,10 +646,20 @@ func (w *workspace) input(event *tcell.EventKey) *tcell.EventKey {
 		} else {
 			w.app.Stop()
 		}
+	case '3':
+		w.networkPage()
+	case '4', '5':
+		w.hostPage(int(event.Rune() - '1'))
 	case '1', '2':
 		w.switchMode(int(event.Rune() - '1'))
 	case 'z':
 		w.toggleZoom()
+	case 'x':
+		w.constellation()
+	case 'I':
+		w.storylineView()
+	case 'G':
+		w.cycleGraphMode()
 	case 'V':
 		w.savedViews()
 	case 'T':
@@ -596,7 +735,7 @@ func (w *workspace) input(event *tcell.EventKey) *tcell.EventKey {
 	case 'a':
 		w.actions()
 	case '?':
-		w.message("Welcome to Systemdoc", "Two modes. One workspace.\n\n1 / 2 switch modes · / filters names, states, projects\nEnter focuses inspector · Tab switches panes\nl logs · h retained log history · L live log drawer · c configuration · r resources · o overview\nR restart selected workload · t previews themes · a actions · q quits\nS sort · i active only · A cycle state filter · z expand focused pane · Escape restores\nClick Active / Attention cards to filter; click again to clear\n\nLive data refreshes automatically.\nV saved views · T systemd timers · E troubleshooting snapshot\ns richer log search · p Compose projects · H operation history\nf favorite · F favorites only · u system/user scope\n: supported commands · Actions includes lifecycle and native tools.")
+		w.message("Welcome to Systemdoc", "Five areas. One workspace.\n\n0 opens the Control Deck · 1 / 2 services and containers · 3 network · 4 processes · 5 storage\n/ filters names, states and projects · Enter inspects · Tab switches panes\nx maps the selected workload constellation · I opens the incident storyline · G cycles block/braille/ASCII graphics\nl logs · h retained log history · L live log drawer · c configuration · r resources · o overview\nR reviews restart · t previews themes · a searches actions · q quits\nS sort · i active only · A cycle state filter · z expand focused pane · [ / ] resize split · Escape restores\nClick Active / Attention cards to filter; click again to clear\n\nLive data refreshes automatically · , changes the polling interval.\nV saved views · T systemd timers · E troubleshooting snapshot\ns richer log search · p Compose projects · H operation history\nf favorite · F favorites only · u system/user scope\n: supported commands · Actions includes lifecycle and native tools.")
 	case 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	case 'k':

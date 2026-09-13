@@ -25,6 +25,9 @@ func (w *workspace) syncLogDrawer() {
 	key := ""
 	if w.drawerOpen && item.ID != "" && !(w.mode == 0 && isTemplate(item)) {
 		key = fmt.Sprintf("%d/%t/%s", w.mode, w.user, item.ID)
+		if w.mode == 0 && usesLaunchd() {
+			key += fmt.Sprintf("/pid/%d", item.PID)
+		}
 	}
 	if key == w.drawerKey {
 		if key == "" && w.drawerOpen && w.mode == 0 && isTemplate(item) {

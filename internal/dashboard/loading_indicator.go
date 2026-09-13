@@ -13,4 +13,7 @@ func (w *workspace) updateLoadingIndicator() {
 		glyph = string(frames[(time.Now().UnixMilli()/120)%int64(len(frames))])
 	}
 	w.loadingIndicator.SetText(glyph)
+	if w.splashView != nil {
+		w.splashView.SetText(w.splashText())
+	}
 }

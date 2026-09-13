@@ -17,11 +17,14 @@ check:
 	go test ./...
 
 install: build
-	install -Dm755 bin/systemdoc "$(DESTDIR)$(PREFIX)/bin/systemdoc"
+	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
+	install -m755 bin/systemdoc "$(DESTDIR)$(PREFIX)/bin/systemdoc"
 
 cross:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/systemdoc-linux-amd64 ./cmd/systemdoc
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/systemdoc-linux-arm64 ./cmd/systemdoc
+
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/systemdoc-darwin-arm64 ./cmd/systemdoc
 
 release:
 	sh scripts/release.sh "$(VERSION)"

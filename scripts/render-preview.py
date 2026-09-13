@@ -26,6 +26,6 @@ for y, row in enumerate(rows):
         fg = cell["FG"] if cell["FG"] >= 0 else 0xEDF5FF
         weight = 700 if cell.get("Bold") else 400
         glyph = html.escape(cell["Rune"])
-        parts.append(f'<text x="{x*10}" y="{y*20+15}" font-family="JetBrains Mono,JetBrainsMono Nerd Font,monospace" font-size="16" font-weight="{weight}" fill="#{fg:06x}">{glyph}</text>')
+        parts.append(f'<text x="{x*10}" y="{y*20+15}" font-family="JetBrainsMono Nerd Font,JetBrains Mono,monospace" font-size="16" font-weight="{weight}" fill="#{fg:06x}">{glyph}</text>')
 parts.append('</svg>')
 args.output.write_text(''.join(parts))

@@ -4,6 +4,7 @@ package remote
 import (
 	"context"
 	"debug/elf"
+	"debug/macho"
 	"fmt"
 	"io"
 	"os"
@@ -141,7 +142,7 @@ func Run(o Options) error {
 		if err != nil {
 			return err
 		}
-		_, err = o.capture("umask 077; cat > "+shellQuote(o.Binary)+" && chmod 700 -- "+shellQuote(o.Binary), file)
+		_, err = o.capture("umask 077; cat > "+shellQuote(o.Binary)+" && chmod 700 "+shellQuote(o.Binary), file)
 		file.Close()
 		if err != nil {
 			return err
@@ -162,6 +163,22 @@ func Run(o Options) error {
 }
 
 func checkBinary(path, platform string) error {
+	if strings.HasPrefix(platform, "Darwin ") {
+		if platform != "Darwin arm64" {
+			return fmt.Errorf("macOS upload supports Apple Silicon (arm64) only")
+		}
+		file, err := macho.Open(path)
+		if err != nil {
+			return fmt.Errorf("upload to macOS requires a matching Mach-O executable: %w", err)
+		}
+		defer file.Close()
+		expected := map[macho.Cpu]string{macho.CpuArm64: "Darwin arm64"}
+		if file.Type != macho.TypeExec || expected[file.Cpu] == "" || expected[file.Cpu] != platform {
+			return fmt.Errorf("Mach-O executable architecture does not match remote %q", platform)
+		}
+		return nil
+	}
+
 	file, err := elf.Open(path)
 	if err != nil {
 		return fmt.Errorf("upload requires a Linux ELF binary: %w", err)

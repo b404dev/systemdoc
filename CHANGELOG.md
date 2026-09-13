@@ -6,6 +6,27 @@ Changes are recorded here before being assigned a release tag.
 
 ### Added
 
+- Whole-machine CPU and memory utilisation. The two resource telemetry cards now lead with host percentages on a fixed 0-100% scale and keep the tracked workload sum beside them, and the masthead repeats both figures where the terminal is wide enough. Linux reads `/proc/stat` and `/proc/meminfo`; macOS uses `vm_stat` with `sysctl` and per-process CPU shares. Unavailable readings stay visibly missing rather than reporting zero.
+
+- Networking, Process Explorer and Disk & Storage are now visually distinct rather than the same table three times. Each carries a signature hue from the theme's decorative accent-to-glow range (severity colours keep their single meaning), a selection band named for what it shows - Socket exposure, Process vitals, Capacity, Open handle - and inline severity-coloured meters in percentage columns at 100 columns or wider.
+
+- Process Explorer plots host CPU and memory trends on its cards, beside the summed `ps` snapshot figures, and shows the selected process's CPU and resident memory as gauges. Disk & Storage shows space and inode gauges for the selected filesystem. Networking leads its band with an exposure chip read from the bind address - loopback, single address, host-wide or an established flow - while keeping the caveat that a bind address is not a firewall rule.
+
+- Process Explorer and Disk & Storage each gained a view rail naming their own two views - Flat/Tree and Filesystems/Deleted but open - so the two panels no longer present as the same table. `f`/`t` and `m`/`d` select a view directly; the original toggle keys still work.
+
+- Pulse telemetry charts for health and resources, per-workload Focus Lens trails, an always-visible incident Storyline, an on-demand System Constellation relationship map, and persisted block/braille/ASCII signal graphics. All histories are bounded and reuse existing polls.
+
+- A searchable Control Deck documents and opens five explicit operational suites: Services, Containers, Network, Processes, and Storage. It is available from the visible toolbar or with `0` across live pages.
+
+- Process Explorer (`4`) with CPU/RSS sorting, parent trees, full command lines, filtering, and port/service navigation. Disk & Storage (`5`) with filesystem and inode pressure, deleted-open-file inspection, and reviewed exports. Both use the shared gradient dashboard surfaces and support Linux/macOS collectors.
+- Process Explorer now offers a reviewed signal palette for terminate, interrupt, hangup, suspend, resume and force-kill. It protects PID 1 and Systemdoc, revalidates command identity before signalling, and uses existing user permissions without implicit elevation.
+
+- Host Ports & Networking page (`3`) with TCP/UDP listeners, connections, process/PID ownership, interfaces, a live download/upload speed toggle, field filters, pause/refresh, and reviewed exports. Linux uses `ss` plus `/proc/net/dev`; macOS uses structured `lsof` plus `netstat -ibn` output.
+- Reduced bursty CPU use: Network now collects only its active view, Speed reads counters without scanning sockets or processes, Linux socket ownership no longer invokes `ps`, and Process Explorer limits full snapshots to once every 15 seconds unless the configured interval is slower.
+
+- Initial macOS launchd service backend: system/GUI scope, loaded-job states, process metrics, plist inspection, PID-scoped unified logs and reviewed lifecycle actions.
+- Apple Silicon builds, macOS installer support, matching Mach-O SSH uploads, and a macOS CI job. Live Mac validation remains required.
+
 - Named saved views with filters, sorting, scope, layout, inspector tab and drawer state; Docker endpoint checks.
 - Retained log search with regex, inclusive time bounds, merged context and next/previous matches.
 - Read-only systemd timer browser with next/last triggers and timer/activated-unit inspection.
@@ -14,16 +35,31 @@ Changes are recorded here before being assigned a release tag.
 
 ### Fixes
 
+- Idle CPU was climbing because colour interpolation moved to CIE Lab, which costs about a microsecond per call and runs for every cell of every frame (a 160x44 frame went from roughly 4 ms to 19-36 ms). Blends are now memoised per colour pair with the amount quantised to 256 steps, `tcell.GetColor` string parsing is hoisted out of the per-cell surface loop, and the host utilisation sampler and the per-page poll tickers apply state without forcing extra frames - the screen is drawn by the existing one-second dashboard tick. Frame and blend benchmarks were added as a regression guard.
+
+- Workspace rail buttons (Deck, Views, Actions, Themes, Expand) were sized to their exact labels, so adjacent controls ran together as `Viewsa`, `Actionst` and `Themesz`, and `Expand` could be clipped at the right edge. Button widths now derive from the rendered label.
+
 - Background inventory refresh no longer resets focus from the inspector, log drawer, search field, or an active overlay.
 - Slow inspector responses preserve the latest reading position instead of restoring the scroll offset from the start of the request.
 
 ### Interface
 
-- Five additional moody themes: Deep Obsidian, Forest, Aubergine, Copper and Midnight, with subdued accents and consistent state colours.
+- Colour interpolation now runs through CIE Lab using go-colorful (already present as an indirect dependency, now direct) via the single `blend` function, so every gradient, surface tint, selection row and frame highlight steps evenly in perceived colour. One severity ramp - green below 70%, amber from 70%, red from 85% - now colours every share-of-machine figure across the application: the masthead readout, the host cards, workload and process CPU, and filesystem space and inodes. The host memory card's rail moved from the warning colour to a decorative hue so severity colours keep a single meaning.
+
+- The masthead and suite rail are now uniform across every page. Networking, Process Explorer and Disk & Storage previously collapsed to a one-line header without the gradient rule and with different wording, and their suite rail had no controls on the right; all pages now share one height rule, one first line, the host readout and glyph-mode hint on the second line, the rule beneath, and a Control Deck button on the rail.
+
+- The splash carries a large block-letter wordmark; the masthead keeps a compact one so no working rows are lost. The interface no longer calls itself a "gothic" observatory.
+
+- Reframed the visual system as a restrained gothic observatory: an eye-led identity, a centralized Nerd Font vocabulary with icon-plus-text labels, and five cohesive Cathedral, Reliquary, Nocturne, Crypt, and Blood Moon palettes. Legacy Deep theme preferences migrate without rewriting their files.
+
+- Command and change approvals now appear in a compact, theme-aware action card over the live workspace instead of replacing the entire screen.
+
+- Responsive workspace overhaul: a wide live-operations masthead, genuine two-row Pulse area charts, a compact one-row identity fallback, denser selected-workload bands, visible Saved Views and Actions, and uppercase numbered suite navigation.
+- Adjustable 30–70% inventory/inspector split with `[` / `]`, preference persistence, and named-view restoration.
+
+- Added a themed startup splash and an always-visible polling control. The 2–300 second interval can be changed from any live page and now updates open Network, Process, and Storage pollers immediately.
 
 - Replaced the three-row live/activity bar with a muted bottom-right refresh spinner; sample timestamps stay fixed between refreshes and activity remains available with `v`.
-
-- Five original Deep themes: Navy, Violet, Teal, Ember, and Rose; retired presets fall back to Deep Navy.
 - Independent decorative glow colours, shared severity colours, gradient header/selection, open telemetry rails, and dark continuous inventory surfaces.
 - Docker Overview now includes identity, image, health, restart policy, ports, volumes/bind mounts, networks, runtime settings, limits, and labels. Connections focuses on attachments; raw inspect JSON remains available.
 

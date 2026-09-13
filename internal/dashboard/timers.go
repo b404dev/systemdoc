@@ -62,6 +62,10 @@ func listTimers(ctx context.Context, user bool) ([]systemTimer, error) {
 	return rows, nil
 }
 func (w *workspace) timers() {
+	if usesLaunchd() {
+		w.message("Systemd timers unavailable", "macOS jobs use launchd scheduling keys. Select a service and open Config to inspect StartInterval or StartCalendarInterval.")
+		return
+	}
 	user := w.user
 	ctx, cancel := context.WithCancel(w.ctx)
 	var jobCancel context.CancelFunc

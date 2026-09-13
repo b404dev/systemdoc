@@ -4,11 +4,11 @@
 
 ## Requirements
 
-Release binaries target Linux x86_64 (`amd64`) and aarch64 (`arm64`). The installer needs `curl`, `sha256sum`, and standard Linux shell utilities. The binary is built with `CGO_ENABLED=0` and does not need Go on the target host.
+Release binaries target Linux x86_64 (`amd64`) and aarch64 (`arm64`), plus macOS Apple Silicon (`arm64`). The installer needs `curl`, `sha256sum` or `shasum`, and standard shell utilities. The binary is built with `CGO_ENABLED=0` and does not need Go on the target host.
 
-Systemd features need `systemctl` and, for logs, `journalctl`. Docker features need the Docker CLI and daemon access; Compose uses `docker compose`. SSH uses OpenSSH. Optional AI tools are installed and authenticated separately. No backend is bundled or configured by the installer.
+Linux service features need `systemctl` and, for logs, `journalctl`. macOS service features use `launchctl`, `ps`, `plutil`, and unified `log`. Docker features need the Docker CLI and daemon access; Compose uses `docker compose`. SSH uses OpenSSH. Optional AI tools are installed and authenticated separately. No backend is bundled or configured by the installer.
 
-Use a Unicode monospace font. True-color terminals give the best gradients. A terminal around 120×30 or larger shows the full dashboard; 80×24 uses a compact layout. Nerd Font icons are off by default.
+Use JetBrainsMono Nerd Font or another current Nerd Font for the intended icon grid. True-color terminals give the best gradients. A terminal around 120×30 or larger shows the full dashboard; 80×24 uses a compact layout. The labeled Unicode/ASCII fallback can be enabled under Preferences when a patched font is unavailable.
 
 ## One-line installation and updates
 
@@ -76,3 +76,7 @@ rm "$HOME/.local/bin/systemdoc"
 ```
 
 If you used a custom installation directory, remove that copy instead. Settings and registered project definitions remain under `${XDG_CONFIG_HOME:-$HOME/.config}/systemdoc/`; delete that directory separately only if you want to discard them. Uninstalling does not remove services, containers, volumes, Compose sources, or SSH keys.
+
+## macOS builds
+
+`make build` and `make install` work on macOS. `make cross` produces `bin/systemdoc-darwin-arm64` for Apple Silicon alongside Linux executables. The release installer selects these assets and uses `shasum -a 256` when `sha256sum` is unavailable. See [macOS services](macos.md) for scope, permissions and current validation limits.

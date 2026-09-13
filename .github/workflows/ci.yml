@@ -7,7 +7,10 @@ permissions:
   contents: read
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -17,4 +20,7 @@ jobs:
           go-version: stable
       - run: make check
       - run: make test
+      - name: Read-only launchd smoke test
+        if: runner.os == 'macOS'
+        run: SYSTEMDOC_LIVE_LAUNCHD=1 go test ./internal/dashboard -run '^TestLiveLaunchdReadOnly$' -count=1
       - run: make cross

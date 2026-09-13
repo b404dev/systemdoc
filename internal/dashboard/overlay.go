@@ -11,15 +11,25 @@ type overlay struct {
 	*tview.Box
 	content       tview.Primitive
 	width, height int
+	inset         int
 }
 
 func centered(content tview.Primitive, width, height int) *overlay {
 	return &overlay{Box: tview.NewBox(), content: content, width: width, height: height}
 }
 
+// centeredDialog leaves a little of the current workspace visible even when
+// the terminal is smaller than the dialog's preferred size. That context is
+// especially useful for short, interrupting decisions such as action approval.
+func centeredDialog(content tview.Primitive, width, height int) *overlay {
+	return &overlay{Box: tview.NewBox(), content: content, width: width, height: height, inset: 1}
+}
+
 func (o *overlay) Draw(screen tcell.Screen) {
 	x, y, width, height := o.GetRect()
-	w, h := min(width, o.width), min(height, o.height)
+	availableWidth := max(1, width-o.inset*2)
+	availableHeight := max(1, height-o.inset*2)
+	w, h := min(availableWidth, o.width), min(availableHeight, o.height)
 	o.content.SetRect(x+(width-w)/2, y+(height-h)/2, w, h)
 	o.content.Draw(screen)
 }

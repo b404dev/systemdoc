@@ -1,36 +1,35 @@
-# The Deep theme family
+# The Observatory theme family
 
 [Back to Systemdoc](README.md) · [Configuration](docs/configuration.md)
 
-Ten original Systemdoc themes, all built around Deep Navy's near-black surfaces and high-contrast text. The layout and lighting are shared; the accent changes the character of the workspace.
+Systemdoc's five themes share a restrained gothic identity: near-black architectural surfaces, bone-white text, silver context, and selective stained-glass colour. The eye mark represents observation; operational labels remain direct and modern.
 
-![Ten Deep theme colour previews](docs/assets/themes.svg)
+![Five Observatory theme colour previews](docs/assets/themes.svg)
 
-| Theme | Background | Surface | Accent → glow |
-| --- | --- | --- | --- |
-| **Deep Navy** · default | `#070b14` | `#0e1626` | Cyan `#43e8ff` → pink `#ff5cac` |
-| **Deep Violet** | `#0b0914` | `#171226` | Violet `#b99aff` → ice `#5de6ff` |
-| **Deep Teal** | `#060e12` | `#0c1b23` | Mint `#44f2c4` → blue `#62a8ff` |
-| **Deep Ember** | `#100b0a` | `#211613` | Amber `#ffbb66` → rose `#ff6b9c` |
-| **Deep Rose** | `#100a12` | `#211322` | Pink `#ff83c7` → lilac `#b59aff` |
-| **Deep Obsidian** | `#090b0e` | `#14181e` | Silver `#b4becd` → steel `#889bb8` |
-| **Deep Forest** | `#080d0a` | `#121c16` | Sage `#a3c49b` → faded teal `#75b8ac` |
-| **Deep Aubergine** | `#100b12` | `#201624` | Dusty mauve `#c3a1bc` → lavender `#999dc8` |
-| **Deep Copper** | `#100c09` | `#211913` | Copper `#cca789` → muted rose `#b98f96` |
-| **Deep Midnight** | `#080b13` | `#111a2a` | Moonlit blue `#94add8` → slate violet `#9991bf` |
+| Theme | Background | Surface | Accent → glow | Character |
+| --- | --- | --- | --- | --- |
+| **Cathedral** · default | `#070a10` | `#101722` | Cold cyan `#64ddea` → violet `#a889e8` | Moonlit stone and stained glass |
+| **Reliquary** | `#0b0908` | `#191511` | Tarnished gold `#d4b777` → crimson `#e06a7d` | Warm metal and dark wood |
+| **Nocturne** | `#0d0912` | `#1a1220` | Lavender `#b9a1e8` → cyan `#64ddea` | Violet night and cold light |
+| **Crypt** | `#070b09` | `#101812` | Sage `#9bbd9f` → gold `#d4b777` | Moss, old stone, low light |
+| **Blood Moon** | `#100709` | `#201014` | Crimson `#e06a7d` → gold `#d4b777` | Controlled drama for late-night work |
 
-The five quieter additions use softer, less saturated accents: Obsidian for charcoal and silver, Forest for mossy greens, Aubergine for smoky plum, Copper for warm brown, and Midnight for cool ink blue. They keep the same readable text and state colours.
+All themes share bone-white foreground `#e9e4da`, muted silver `#9aa3b1`, error `#e06a7d`, warning `#d4b777`, and success `#64d7a1`. Decorative glow remains separate from severity, so a theme never changes the meaning of a failure or warning.
 
-All themes share foreground `#edf5ff`, muted text `#8c9db8`, error `#ff5cac`, warning `#ffce70`, and success `#53f5af`. Decorative glow is a separate token from error severity.
+## Nerd Font identity
+
+The interface is designed on a patched monospace cell grid and enables Nerd Font icons by default. JetBrainsMono Nerd Font is the recommended face. A single semantic vocabulary covers the eye identity, five suites, navigation, status, filters, metrics, approvals, and destructive actions.
+
+Icons always accompany text. Suite numbers and keyboard shortcuts remain visible, status is never communicated by glyph or colour alone, and Preferences can switch to labeled Unicode/ASCII fallbacks when a patched font is unavailable.
 
 ## Choose a theme
 
-Press `t`, move through the list to preview the live workspace, then Enter to save. Escape restores your original theme. Settings are local to the machine and user running Systemdoc.
+Press `t`, move through the list to preview the live workspace, then Enter to save. Escape restores the original theme. Settings are local to the machine and user running Systemdoc.
 
-The former third-party and light presets have been removed. A saved name that is no longer available falls back to Deep Navy when settings are read. The file is not rewritten until you save a preference. Existing accent/background overrides remain in effect; clear those under Actions → Preferences to see a preset as designed.
+Legacy Deep theme names migrate to the nearest Observatory palette when read. Unknown names resolve to Cathedral. The settings file is not rewritten until a preference is saved, and existing accent/background overrides remain in effect.
 
 ## How the light works
 
-The header and selected row blend accent toward glow. Open telemetry panels use semantic accent rails and tinted surfaces; the focused pane gets a brighter edge. The pointer and text labels remain useful without colour. These are terminal-cell effects, with no animation loop or graphics protocol requirement.
+The header and selected row blend accent toward glow. All blending is done in CIE Lab, so the gradient steps evenly in perceived colour rather than in raw channel values. Open telemetry panels use semantic accent rails and tinted surfaces; the focused pane gets a brighter edge. The pointer, icon, and written label remain useful without colour. These are terminal-cell effects with no graphics protocol requirement.
 
-A true-color terminal displays the intended gradients. Indexed terminals may quantize colours, so the exact result depends on the terminal. Standard Unicode fonts work; Nerd Font icons are optional.
+A true-color terminal displays the intended gradients. Indexed terminals may quantize colours, so the exact result depends on the terminal and its configured font.

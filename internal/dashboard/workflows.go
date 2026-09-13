@@ -57,7 +57,7 @@ func matchesFilter(item workload, query string) bool {
 				}
 				continue
 			case "enabled":
-				if item.Enablement == "" {
+				if item.Enablement == "" || item.Enablement == "default" {
 					return false
 				}
 				enabled := strings.HasPrefix(item.Enablement, "enabled")
@@ -65,7 +65,7 @@ func matchesFilter(item workload, query string) bool {
 					return false
 				}
 				continue
-			case "boot":
+			case "boot", "override":
 				if item.Enablement != value {
 					return false
 				}
@@ -131,11 +131,18 @@ func (w *workspace) actions() {
 	var choices []choice
 	add := func(name, description string, run func()) { choices = append(choices, choice{name, description, run}) }
 	add("AI troubleshooting", "Review text before sending to Codex or Claude", w.aiDialog)
+	add("Ports and networking", "Find port owners, connections and host interfaces", w.networkPage)
+	add("Process explorer", "CPU, memory, parent trees and process ports", func() { w.hostPage(3) })
+	add("Disk and storage", "Mount usage, inode pressure and deleted open files", func() { w.hostPage(4) })
 	add("Saved views", "Save and restore filters, sorting and layout", w.savedViews)
-	add("Systemd timers", "Browse next and last runs in the current system/user scope", w.timers)
+	if !usesLaunchd() {
+		add("Systemd timers", "Browse next and last runs in the current system/user scope", w.timers)
+	}
 	add("Troubleshooting snapshot", "Collect, review and export a workload report", w.snapshotDialog)
 	add("Refresh", "Update observed workloads", w.load)
 	add("Workload activity", "Observed state transitions in this session", w.activityView)
+	add("Incident storyline", "Chronological state changes across the current suite", w.storylineView)
+	add("System Constellation", "Map the selected workload to processes and dependencies", w.constellation)
 	add("Export inspector", "Save reviewed output to a new private file", w.exportView)
 	add("Run on remote host", "Launch the full suite over SSH and return here on exit", w.remoteDialog)
 	add("Preferences", "Refresh rate, layouts, wrapping, and startup", w.preferences)
@@ -143,8 +150,10 @@ func (w *workspace) actions() {
 	add("Compose projects", "Discover or register Compose source files", w.projectDialog)
 	add("Operations", "Session history and cancellation", w.operationHistory)
 	add("New Compose project", "Edit and validate source before deployment", w.newCompose)
-	add("New service draft", "Create a service file in an editor, then verify", w.newService)
-	verbs := []string{"start", "stop", "restart", "reload", "enable", "disable", "mask", "unmask", "reset-failed"}
+	if !usesLaunchd() {
+		add("New service draft", "Create a service file in an editor, then verify", w.newService)
+	}
+	verbs := serviceVerbs()
 	if w.mode == 1 {
 		verbs = []string{"start", "stop", "restart", "pause", "unpause", "rm"}
 	}
@@ -157,24 +166,26 @@ func (w *workspace) actions() {
 		if !w.user {
 			add("System service authorization", "Run a lifecycle command with terminal sudo authentication", w.authorizedActions)
 		}
-		add("Edit unit override", "Open systemctl edit in your editor; existing authorization applies", func() {
-			args := []string{"edit", item.ID}
-			if w.user {
-				args = append([]string{"--user"}, args...)
-			}
-			if item.ID != "" {
-				w.native("systemctl", args...)
-			}
-		})
-		add("Follow journal", "Open journalctl -f; Ctrl-C returns", func() {
-			args := []string{"-u", item.ID, "-f"}
-			if w.user {
-				args = append([]string{"--user"}, args...)
-			}
-			if item.ID != "" {
-				w.native("journalctl", args...)
-			}
-		})
+		if !usesLaunchd() {
+			add("Edit unit override", "Open systemctl edit in your editor; existing authorization applies", func() {
+				args := []string{"edit", item.ID}
+				if w.user {
+					args = append([]string{"--user"}, args...)
+				}
+				if item.ID != "" {
+					w.native("systemctl", args...)
+				}
+			})
+			add("Follow journal", "Open journalctl -f; Ctrl-C returns", func() {
+				args := []string{"-u", item.ID, "-f"}
+				if w.user {
+					args = append([]string{"--user"}, args...)
+				}
+				if item.ID != "" {
+					w.native("journalctl", args...)
+				}
+			})
+		}
 	} else {
 		add("Container shell", "Open /bin/sh in selected container", func() {
 			if item.ID != "" {

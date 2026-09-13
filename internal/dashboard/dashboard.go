@@ -14,6 +14,9 @@ import (
 var tabNames = []string{"Overview", "Logs", "Config", "Resources", "Dependencies"}
 
 func (w *workspace) inspectorTabName() string {
+	if w.mode == 0 && usesLaunchd() && w.tab == 4 {
+		return "Runtime"
+	}
 	if w.mode == 1 && w.tab == 4 {
 		return "Connections"
 	}
@@ -30,6 +33,12 @@ var sortNames = []string{"Name ↑", "Attention first", "CPU ↓", "Memory ↓"}
 type fleetSample struct {
 	active, attention, cpuCount, memoryCount int
 	cpu, memory                              float64
+}
+
+type workloadSignal struct {
+	at          time.Time
+	cpu, memory float64
+	state       string
 }
 
 func available(value string) string {
@@ -58,14 +67,14 @@ func stateColour(item workload, p palette) string {
 	return p.muted
 }
 
-func stateSymbol(item workload) string {
+func stateSymbol(item workload, nerd bool) string {
 	if needsAttention(item) {
-		return "!"
+		return iconFor(nerd, iconAttention)
 	}
 	if isActive(item) {
-		return "●"
+		return iconFor(nerd, iconHealthy)
 	}
-	return "○"
+	return iconFor(nerd, iconIdle)
 }
 
 func cpuValue(value string) (float64, bool) {
@@ -120,6 +129,29 @@ func (w *workspace) sampleFleet() {
 		history = history[len(history)-32:]
 	}
 	w.fleetHistory[w.mode] = history
+}
+
+func (w *workspace) sampleWorkloads(mode int, items []workload) {
+	if w.workloadHistory == nil {
+		w.workloadHistory = map[string][]workloadSignal{}
+	}
+	now := time.Now()
+	for _, item := range items {
+		cpu, cpuOK := cpuValue(item.CPU)
+		memory, memoryOK := memoryValue(item.Memory)
+		if !cpuOK {
+			cpu = -1
+		}
+		if !memoryOK {
+			memory = -1
+		}
+		key := fmt.Sprintf("%d/%t/%s", mode, w.user, item.ID)
+		history := append(w.workloadHistory[key], workloadSignal{at: now, cpu: cpu, memory: memory, state: item.State})
+		if len(history) > 60 {
+			history = history[len(history)-60:]
+		}
+		w.workloadHistory[key] = history
+	}
 }
 
 func (w *workspace) matchesQuickFilter(item workload) bool {
@@ -213,17 +245,36 @@ func (w *workspace) toggleZoom() {
 	w.redrawRows()
 }
 
+func (w *workspace) resizePanes(delta int) {
+	ratio := w.settings.PaneRatio
+	if ratio < 30 || ratio > 70 {
+		ratio = 46
+	}
+	w.settings.PaneRatio = max(30, min(70, ratio+delta))
+	w.lastWidth = 0
+	w.redrawRows()
+}
+
 func (w *workspace) buildDashboard() {
 	w.header.SetDynamicColors(true)
 	w.footer.SetDynamicColors(true)
 	w.logDrawer = textView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
-	w.logDrawer.SetBorder(true).SetTitle(" LIVE LOGS · L closes ")
+	w.logDrawer.SetBorder(true).SetTitle(" " + w.iconLabel(iconLogs, "LIVE LOGS · L closes "))
 	w.pauseLogsOnScroll(w.logDrawer, true)
 	w.pauseLogsOnScroll(w.detail, false)
 	w.selectionCard = textView().SetDynamicColors(true).SetWrap(false)
-	w.selectionCard.SetBorder(true).SetTitle(" SELECTED WORKLOAD ")
+	w.selectionCard.SetBorder(true).SetTitle(" " + w.iconLabel(iconEye, "SELECTED WORKLOAD "))
+	w.storyline = textView().SetDynamicColors(true).SetWrap(false)
+	w.storyline.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick && w.storyline.InRect(event.Position()) {
+			w.storylineView()
+			return tview.MouseConsumed, nil
+		}
+		return action, event
+	})
 	w.loadingIndicator = textView().SetWrap(false).SetTextAlign(tview.AlignCenter)
-	w.footerBar = tview.NewFlex().AddItem(w.footer, 0, 1, false).AddItem(w.loadingIndicator, 2, 0, false)
+	w.pollButton = tview.NewButton("").SetSelectedFunc(w.pollingDialog)
+	w.footerBar = tview.NewFlex().AddItem(w.footer, 0, 1, false).AddItem(w.pollButton, 13, 0, false).AddItem(w.loadingIndicator, 2, 0, false)
 	w.telemetry = tview.NewFlex()
 	for i := range w.cards {
 		card := textView().SetDynamicColors(true).SetWrap(false)
@@ -246,14 +297,23 @@ func (w *workspace) buildDashboard() {
 		}
 	}
 	w.commandBar = tview.NewFlex()
-	for i, label := range []string{"1 Services", "2 Containers"} {
+	initialSuiteLabels := hostTabNames
+	for i, label := range initialSuiteLabels[:2] {
 		i := i
 		button := tview.NewButton(label).SetSelectedFunc(func() { w.switchMode(i) })
 		w.modeButtons[i] = button
-		w.commandBar.AddItem(button, 14, 0, false)
+		w.commandBar.AddItem(button, suiteButtonWidths[i], 0, false)
+	}
+	network := tview.NewButton(initialSuiteLabels[2]).SetSelectedFunc(w.networkPage)
+	w.toolbarButtons = append(w.toolbarButtons, network)
+	w.commandBar.AddItem(network, suiteButtonWidths[2], 0, false)
+	for i, label := range initialSuiteLabels[3:] {
+		button := tview.NewButton(label).SetSelectedFunc(func() { w.hostPage(i + 3) })
+		w.toolbarButtons = append(w.toolbarButtons, button)
+		w.commandBar.AddItem(button, suiteButtonWidths[i+3], 0, false)
 	}
 	w.commandBar.AddItem(tview.NewBox(), 0, 1, false)
-	w.activeOnlyButton = tview.NewButton("i Active only").SetSelectedFunc(func() {
+	w.activeOnlyButton = tview.NewButton("i " + w.iconLabel(iconFilter, "Active")).SetSelectedFunc(func() {
 		w.toggleActiveOnly()
 		if front, _ := w.pages.GetFrontPage(); front == "main" {
 			w.app.SetFocus(w.table)
@@ -262,10 +322,13 @@ func (w *workspace) buildDashboard() {
 	w.commandBar.AddItem(w.activeOnlyButton, 15, 0, false)
 	for _, control := range []struct {
 		label string
-		width int
 		run   func()
 	}{
-		{"a Actions", 11, w.actions}, {"t Themes", 10, w.themeDialog}, {"z Expand", 10, w.toggleZoom},
+		{"0 " + w.iconLabel(iconDeck, "Deck"), w.controlDeck},
+		{"V " + w.iconLabel(iconViews, "Views"), w.savedViews},
+		{"a " + w.iconLabel(iconActions, "Actions"), w.actions},
+		{"t " + w.iconLabel(iconThemes, "Themes"), w.themeDialog},
+		{"z " + w.iconLabel(iconExpand, "Expand"), w.toggleZoom},
 	} {
 		button := tview.NewButton(control.label).SetSelectedFunc(control.run)
 		button.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
@@ -276,19 +339,24 @@ func (w *workspace) buildDashboard() {
 			return action, event
 		})
 		w.toolbarButtons = append(w.toolbarButtons, button)
-		w.commandBar.AddItem(button, control.width, 0, false)
+		w.workspaceButtons = append(w.workspaceButtons, button)
+		w.commandBar.AddItem(button, controlButtonWidth(control.label), 0, false)
 	}
 	w.tabBar = tview.NewFlex()
-	for i, label := range []string{"o Overview", "l Logs", "c Config", "r Metrics", "d Deps"} {
+	for i, label := range []string{
+		"o " + w.iconLabel(iconOverview, "Overview"),
+		"l " + w.iconLabel(iconLogs, "Logs"),
+		"c " + w.iconLabel(iconConfig, "Config"),
+		"r " + w.iconLabel(iconResources, "Metrics"),
+		"d " + w.iconLabel(iconDependencies, "Deps"),
+	} {
 		i := i
 		button := tview.NewButton(label).SetSelectedFunc(func() { w.selectTab(i) })
 		w.tabButtons[i] = button
 		w.tabBar.AddItem(button, 0, 1, false)
 	}
-	restart := tview.NewButton("R Restart selected workload").SetSelectedFunc(func() { w.confirmAction("restart") })
-	w.toolbarButtons = append(w.toolbarButtons, restart)
 	w.inspector = tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(w.selectionCard, 5, 0, false).AddItem(restart, 1, 0, false).
+		AddItem(w.selectionCard, 4, 0, false).
 		AddItem(w.tabBar, 1, 0, false).AddItem(w.detail, 0, 1, true)
 	w.body = tview.NewFlex()
 	w.root = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -314,12 +382,30 @@ func (w *workspace) layoutDashboard(width, height int) {
 	}
 	w.lastWidth, w.lastHeight, w.layoutDetail = width, height, focusDetail
 	w.root.Clear()
-	headerHeight := 1
-	if height >= 28 {
-		headerHeight = 3
+	suiteButtons := append(w.modeButtons[:], w.toolbarButtons[:3]...)
+	setSuiteLabels(suiteButtons, width, w.settings.NerdIcons)
+	for i, button := range suiteButtons {
+		buttonWidth := suiteButtonWidths[i]
+		if width < 100 {
+			buttonWidth = max(6, width/5)
+		}
+		w.commandBar.ResizeItem(button, buttonWidth, 0)
 	}
-	w.header.SetBorderPadding((headerHeight-1)/2, 0, 1, 0)
+	headerHeight := mastheadHeight(width, height)
+	w.header.SetBorderPadding(0, 0, 1, 0)
 	w.root.AddItem(w.header, headerHeight, 0, false).AddItem(w.commandBar, 1, 0, false)
+	activeWidth := 15
+	if width < 150 {
+		activeWidth = 0
+	}
+	w.commandBar.ResizeItem(w.activeOnlyButton, activeWidth, 0)
+	for _, button := range w.workspaceButtons {
+		buttonWidth := controlButtonWidth(button.GetLabel())
+		if width < 140 {
+			buttonWidth = 0
+		}
+		w.commandBar.ResizeItem(button, buttonWidth, 0)
+	}
 	if height >= 28 && w.zoom == 0 && (!w.drawerOpen || height >= 36) {
 		w.root.AddItem(w.telemetry, 5, 0, false)
 	}
@@ -333,21 +419,24 @@ func (w *workspace) layoutDashboard(width, height int) {
 	case w.zoom == 2:
 		w.body.AddItem(w.inspector, 0, 1, true)
 	case w.settings.Layout == "side-by-side" || (w.settings.Layout != "stacked" && width >= 110):
-		w.body.SetDirection(tview.FlexColumn).AddItem(w.table, 0, 5, true).AddItem(w.inspector, 0, 6, false)
+		w.body.SetDirection(tview.FlexColumn).AddItem(w.table, 0, w.settings.PaneRatio, true).AddItem(w.inspector, 0, 100-w.settings.PaneRatio, false)
 	case height >= 36:
-		w.body.SetDirection(tview.FlexRow).AddItem(w.table, 0, 1, true).AddItem(w.inspector, 0, 2, false)
+		w.body.SetDirection(tview.FlexRow).AddItem(w.table, 0, w.settings.PaneRatio, true).AddItem(w.inspector, 0, 100-w.settings.PaneRatio, false)
 	case focusDetail:
 		w.body.AddItem(w.inspector, 0, 1, true)
 	default:
 		w.body.AddItem(w.table, 0, 1, true)
 	}
-	w.inspector.ResizeItem(w.selectionCard, 5, 0)
+	w.inspector.ResizeItem(w.selectionCard, 4, 0)
 	if height < 22 {
-		w.inspector.ResizeItem(w.selectionCard, 3, 0)
+		w.inspector.ResizeItem(w.selectionCard, 0, 0)
 	}
 	w.root.AddItem(w.body, 0, 1, true)
 	if w.drawerOpen && w.zoom == 0 {
 		w.root.AddItem(w.logDrawer, max(4, min(8, height/4)), 0, false)
+	}
+	if height >= 24 && w.zoom == 0 {
+		w.root.AddItem(w.storyline, 1, 0, false)
 	}
 	w.root.AddItem(w.footerBar, 1, 0, false)
 	w.updateDashboard()
@@ -358,25 +447,46 @@ func (w *workspace) styleDashboard() {
 	for _, flex := range []*tview.Flex{w.commandBar, w.tabBar, w.telemetry, w.body, w.inspector, w.footerBar} {
 		flex.SetBackgroundColor(tcell.GetColor(p.background))
 	}
-	for _, view := range append(w.cards[:], w.selectionCard, w.logDrawer) {
+	for _, view := range append(w.cards[:], w.selectionCard, w.logDrawer, w.storyline) {
 		view.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorderColor(tcell.GetColor(p.accent)).SetTitleColor(tcell.GetColor(p.accent)).SetBorderAttributes(tcell.AttrBold)
 		view.SetTextColor(tcell.GetColor(p.text))
 	}
 	w.table.SetBorderAttributes(tcell.AttrBold)
 	w.detail.SetBorderAttributes(tcell.AttrBold)
-	w.commandBar.GetItem(2).(*tview.Box).SetBackgroundColor(tcell.GetColor(p.background))
-	w.table.SetTitle(" WORKLOADS · S sort · Enter inspect ").SetTitleColor(tcell.GetColor(p.accent))
+	w.commandBar.GetItem(5).(*tview.Box).SetBackgroundColor(tcell.GetColor(p.background))
+	w.table.SetTitle(" " + w.iconLabel(iconEye, "WORKLOADS · S sort · Enter inspect ")).SetTitleColor(tcell.GetColor(p.accent))
 	w.table.SetSelectedStyle(tcell.StyleDefault.Background(tcell.GetColor(p.accent)).Foreground(tcell.GetColor(p.background)).Bold(true))
 	w.header.SetBackgroundColor(tcell.GetColor(p.background))
 	w.footer.SetBackgroundColor(tcell.GetColor(p.background))
 	w.loadingIndicator.SetBackgroundColor(tcell.GetColor(p.background))
 	w.loadingIndicator.SetTextColor(tcell.GetColor(p.muted))
+	w.pollButton.SetStyle(tcell.StyleDefault.Foreground(tcell.GetColor(p.muted)).Background(tcell.GetColor(p.background)))
+	w.pollButton.SetActivatedStyle(tcell.StyleDefault.Foreground(tcell.GetColor(p.background)).Background(tcell.GetColor(p.accent)).Bold(true))
+	w.updatePollButton()
 	w.summary.SetTextColor(tcell.GetColor(p.muted))
 	w.styleNavigation()
 }
 
 func (w *workspace) styleNavigation() {
 	p := w.palette()
+	w.activeOnlyButton.SetLabel("i " + w.iconLabel(iconFilter, "Active"))
+	workspaceLabels := []string{
+		"0 " + w.iconLabel(iconDeck, "Deck"),
+		"V " + w.iconLabel(iconViews, "Views"),
+		"a " + w.iconLabel(iconActions, "Actions"),
+		"t " + w.iconLabel(iconThemes, "Themes"),
+		"z " + w.iconLabel(iconExpand, "Expand"),
+	}
+	for i, button := range w.workspaceButtons {
+		button.SetLabel(workspaceLabels[i])
+	}
+	tabLabels := []string{
+		"o " + w.iconLabel(iconOverview, "Overview"),
+		"l " + w.iconLabel(iconLogs, "Logs"),
+		"c " + w.iconLabel(iconConfig, "Config"),
+		"r " + w.iconLabel(iconResources, "Metrics"),
+		"d " + w.iconLabel(iconDependencies, "Deps"),
+	}
 	style := func(button *tview.Button, selected bool) {
 		fg, bg := p.muted, p.background
 		if selected {
@@ -390,10 +500,14 @@ func (w *workspace) styleNavigation() {
 		style(button, i == w.mode)
 	}
 	for i, button := range w.tabButtons {
+		button.SetLabel(tabLabels[i])
 		if i == 4 {
-			label := "d Deps"
+			label := "d " + w.iconLabel(iconDependencies, "Deps")
+			if w.mode == 0 && usesLaunchd() {
+				label = "d " + w.iconLabel(iconProcesses, "Runtime")
+			}
 			if w.mode == 1 {
-				label = "d Connect"
+				label = "d " + w.iconLabel(iconNetwork, "Connect")
 			}
 			button.SetLabel(label)
 		}
@@ -447,26 +561,31 @@ func (w *workspace) updateDashboard() {
 		cpuHistory = cpuHistory[len(cpuHistory)-chartWidth:]
 		memoryHistory = memoryHistory[len(memoryHistory)-chartWidth:]
 	}
-	cpuTrend, memoryTrend := sparkline(cpuHistory), sparkline(memoryHistory)
-	if len(cpuHistory) < 2 {
-		cpuTrend = "collecting samples"
-		memoryTrend = "collecting samples"
+	// Host cards are drawn on a fixed 0–100 scale so the fill height always
+	// means the same share of the machine, whatever the recent range was.
+	hostCPUTrend := signalArea(trimHistory(w.hostCPUHistory, chartWidth), 100, w.settings.GraphMode)
+	hostMemoryTrend := signalArea(trimHistory(w.hostMemoryHistory, chartWidth), 100, w.settings.GraphMode)
+	activeHistory, attentionHistory := []float64{}, []float64{}
+	for _, sample := range w.fleetHistory[w.mode] {
+		activeHistory = append(activeHistory, float64(sample.active))
+		attentionHistory = append(attentionHistory, float64(sample.attention))
 	}
-	values := []struct{ title, colour, text string }{
-		{" ACTIVE · click to filter ", p.success, fmt.Sprintf("%d active / %d listed\n%s\n%s", totals.active, len(w.items[w.mode]), meter(float64(totals.active), float64(len(w.items[w.mode])), 20), quickFilterNames[w.quickFilter])},
-		{" ATTENTION · filter ", p.error, fmt.Sprintf("%d need attention\n%s\nFailures / unhealthy", totals.attention, meter(float64(totals.attention), float64(len(w.items[w.mode])), 20))},
-		{" WORKLOAD CPU ", p.accent, fmt.Sprintf("%s · %d reporting\n%s\n100%% = one logical CPU", cpu, totals.cpuCount, cpuTrend)},
-		{" TRACKED MEMORY ", p.warning, fmt.Sprintf("%s · %d reporting\n%s\nTrend · automatic scale", memory, totals.memoryCount, memoryTrend)},
+	activeVisual := signalArea(activeHistory, float64(max(1, len(w.items[w.mode]))), w.settings.GraphMode)
+	attentionVisual := signalArea(attentionHistory, float64(max(1, len(w.items[w.mode]))), w.settings.GraphMode)
+	values := []struct{ title, colour, headline, visual string }{
+		{" " + w.iconLabel(iconHealthy, "ACTIVE · click to filter "), p.success, fmt.Sprintf("%d active · %s", totals.active, signalDelta(activeHistory)), activeVisual},
+		{" " + w.iconLabel(iconAttention, "ATTENTION · click to filter "), p.error, fmt.Sprintf("%d failed · %s", totals.attention, signalDelta(attentionHistory)), attentionVisual},
+		{" " + w.iconLabel(iconResources, "HOST CPU "), p.accent, severityHeadline(p, p.accent, hostCPUHeadline(w.hostUsage, cpu), w.hostUsage.cpuPercent, w.hostUsage.cpuOK), hostCPUTrend},
+		{" " + w.iconLabel(iconProcesses, "HOST MEMORY "), p.glow, severityHeadline(p, p.glow, hostMemoryHeadline(w.hostUsage, memory), w.hostUsage.memPercent, w.hostUsage.memOK), hostMemoryTrend},
 	}
 	for i, value := range values {
 		card := w.cards[i]
 		card.SetTitle(value.title).SetTitleColor(tcell.GetColor(value.colour))
-		lines := strings.Split(value.text, "\n")
-		visual := lines[1]
-		if i < 2 || len(cpuHistory) >= 2 {
+		visual := value.visual
+		if i < 2 || len(w.hostCPUHistory) >= 2 {
 			visual = gradientText(visual, value.colour, p.accent)
 		}
-		card.SetText(fmt.Sprintf("[%s::b]%s[-::-]\n%s\n[%s]%s[-]", value.colour, lines[0], visual, p.muted, lines[2]))
+		card.SetText(fmt.Sprintf("[%s::b]%s[-::-]\n%s", value.colour, value.headline, visual))
 		border := value.colour
 		if i < 2 && w.quickFilter == i+1 {
 			border = p.text
@@ -485,12 +604,14 @@ func (w *workspace) updateDashboard() {
 	} else {
 		filter := quickFilterNames[w.quickFilter]
 		if w.favoriteOnly {
-			filter = "★ " + filter
+			filter = w.icon(iconFavorite) + " " + filter
 		}
-		w.summary.SetText(fmt.Sprintf(" %d/%d · %s · %s · %s · ● %d  ! %d", len(w.visible), len(w.items[w.mode]), shortStatus, filter, sortNames[w.sortMode], totals.active, totals.attention))
+		w.summary.SetText(fmt.Sprintf(" %d/%d · %s · %s · %s · %s %d  %s %d", len(w.visible), len(w.items[w.mode]), shortStatus, filter, sortNames[w.sortMode], w.icon(iconHealthy), totals.active, w.icon(iconAttention), totals.attention))
 	}
 	w.updateLoadingIndicator()
 	w.updateSelectionCard()
+	w.updateStoryline()
+	w.updateHeader()
 }
 
 func (w *workspace) updateSelectionCard() {
@@ -500,24 +621,66 @@ func (w *workspace) updateSelectionCard() {
 	item := w.current()
 	p := w.palette()
 	if item.ID == "" {
-		w.selectionCard.SetTitle(" SELECTED WORKLOAD ")
-		w.selectionCard.SetText("\n Select a workload to inspect its state, resources and logs.")
+		w.selectionCard.SetTitle(" " + w.iconLabel(iconEye, "SELECTED WORKLOAD "))
+		w.selectionCard.SetText(" Select a workload to inspect state, resources and logs.")
 		return
 	}
-	context := "boot " + available(item.Enablement) + " · load " + available(item.LoadState)
+	context := "boot " + available(item.Enablement)
+	if w.mode == 0 && usesLaunchd() {
+		context = "override " + available(item.Enablement) + " · " + launchDomain(w.user)
+	}
 	if w.mode == 1 {
 		context = "project " + item.Project
 	}
 	w.selectionCard.SetTitle(" " + tview.Escape(clean(item.Name)) + " ").SetTitleColor(tcell.GetColor(p.accent))
-	description := item.Description
-	if item.Aliases != "" {
-		description += " · aliases: " + item.Aliases
-	}
 	state := item.State
 	if w.mode == 0 && !item.UnitFileOnly && item.Detail != "" {
 		state += " / " + item.Detail
 	}
-	w.selectionCard.SetText(fmt.Sprintf(" [%s::b]%s %s[-::-]  [%s]%s[-]\n %s\n [%s]CPU[-] %s   [%s]MEM[-] %s", stateColour(item, p), stateSymbol(item), tview.Escape(clean(state)), p.muted, tview.Escape(clean(context)), tview.Escape(clean(description)), p.accent, tview.Escape(available(item.CPU)), p.accent, tview.Escape(available(item.Memory))))
+	key := fmt.Sprintf("%d/%t/%s", w.mode, w.user, item.ID)
+	history := w.workloadHistory[key]
+	cpuHistory, memoryHistory := []float64{}, []float64{}
+	for _, sample := range history {
+		cpuHistory = append(cpuHistory, sample.cpu)
+		memoryHistory = append(memoryHistory, sample.memory)
+	}
+	trend := "collecting workload history"
+	if len(history) >= 2 {
+		trend = fmt.Sprintf("CPU %s  %s   MEM %s  %s", signalChart(cpuHistory, w.settings.GraphMode), signalDelta(cpuHistory), signalChart(memoryHistory, w.settings.GraphMode), signalDelta(memoryHistory))
+	}
+	// The workload's CPU share takes the severity ramp; memory has no honest
+	// per-workload ceiling to grade against, so it stays in the identity hue.
+	cpuHue := p.accent
+	if cpuShare, ok := cpuValue(item.CPU); ok {
+		cpuHue = pressureHue(p, int(cpuShare))
+	}
+	w.selectionCard.SetText(fmt.Sprintf(" [%s::b]%s %s[-::-]  [%s]%s[-]  [%s]CPU[-] [%s::b]%s[-::-]  [%s]MEM[-] %s\n [%s]%s[-]", stateColour(item, p), stateSymbol(item, w.settings.NerdIcons), tview.Escape(clean(state)), p.muted, tview.Escape(clean(context)), p.muted, cpuHue, tview.Escape(available(item.CPU)), p.muted, tview.Escape(available(item.Memory)), p.muted, tview.Escape(trend)))
+}
+
+// severityHeadline colours the leading host figure by the severity ramp and
+// hands the rest of the line back to the card's own hue. Card headlines are
+// trusted text, so the tags are safe; the figure itself is a formatted number.
+func severityHeadline(p palette, cardHue, headline string, percent float64, ok bool) string {
+	if !ok {
+		return headline
+	}
+	share, rest, found := strings.Cut(headline, " · ")
+	if !found {
+		return headline
+	}
+	return fmt.Sprintf("[%s]%s[%s] · %s", pressureHue(p, int(percent)), share, cardHue, rest)
+}
+
+func (w *workspace) cycleGraphMode() {
+	current := graphMode(w.settings.GraphMode)
+	for i, mode := range graphModes {
+		if mode == current {
+			w.settings.GraphMode = graphModes[(i+1)%len(graphModes)]
+			break
+		}
+	}
+	w.updateDashboard()
+	w.savePreferences()
 }
 
 func (w *workspace) recentlyChanged(id string) bool {

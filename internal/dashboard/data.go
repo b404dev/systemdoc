@@ -12,6 +12,7 @@ import (
 )
 
 type workload struct {
+	PID                                           int
 	ID, Name, State, Detail, Project, Description string
 	Enablement                                    string
 	LoadState, Aliases                            string
@@ -71,6 +72,9 @@ func listWorkloads(ctx context.Context, mode int, user bool) ([]workload, error)
 		}
 		return result, nil
 	}
+	if usesLaunchd() {
+		return listLaunchServices(ctx, user)
+	}
 	args := []string{"list-units", "--all", "--type=service", "--output=json", "--no-pager"}
 	if user {
 		args = append([]string{"--user"}, args...)
@@ -116,6 +120,9 @@ func enrichInventory(ctx context.Context, mode int, user bool, items []workload)
 		enrichDockerResources(ctx, items)
 		return items
 	}
+	if usesLaunchd() {
+		return enrichLaunchInventory(ctx, user, items)
+	}
 	// Unit-file discovery and resource accounting are independent queries.
 	filesReady := make(chan []unitFile, 1)
 	go func() { filesReady <- listUnitFiles(ctx, user) }()
@@ -159,6 +166,9 @@ func mergeUnitFiles(items []workload, files []unitFile) []workload {
 }
 
 func inspect(ctx context.Context, mode int, user bool, item workload, tab int) (string, error) {
+	if mode == 0 && usesLaunchd() {
+		return inspectLaunchService(ctx, user, item, tab)
+	}
 	if mode == 0 && isTemplate(item) && tab != 2 {
 		return "This is a systemd template, not a running service instance.\n\n" + item.ID + " defines configuration for named instances.\nUse c to read its configuration, or select an instance such as " + strings.Replace(item.ID, "@.", "@NAME.", 1) + " to inspect runtime state, logs and resources.", nil
 	}

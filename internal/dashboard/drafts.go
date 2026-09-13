@@ -16,6 +16,10 @@ var unitName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]*\.service$`)
 func (w *workspace) newService() { w.newServiceFrom("") }
 
 func (w *workspace) newServiceFrom(content string) {
+	if usesLaunchd() {
+		w.message("Systemd drafts unavailable", "macOS uses launchd property lists. Create and register a LaunchAgent/LaunchDaemon with the native tools, then inspect it here.")
+		return
+	}
 	name := tview.NewInputField().SetLabel(" Unit name ").SetText("my-worker.service")
 	editor := tview.NewTextArea().SetText("[Unit]\nDescription=My background worker\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart=/usr/bin/sleep infinity\nRestart=on-failure\nRestartSec=5s\n\n[Install]\nWantedBy=default.target\n", true)
 	if content != "" {

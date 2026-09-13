@@ -41,12 +41,12 @@ func TestProjectContextAndDown(t *testing.T) {
 }
 func TestSettingsRoundTrip(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	s := settings{Theme: "Deep Violet", RefreshSeconds: 3, Favorites: []string{"0/true/foo.service"}}
+	s := settings{Theme: "Nocturne", RefreshSeconds: 3, GraphMode: "braille", Favorites: []string{"0/true/foo.service"}}
 	if err := writeSettings(s); err != nil {
 		t.Fatal(err)
 	}
 	got, err := readSettings()
-	if err != nil || got.Theme != s.Theme || len(got.Favorites) != 1 {
+	if err != nil || got.Theme != s.Theme || got.GraphMode != "braille" || len(got.Favorites) != 1 {
 		t.Fatal(got, err)
 	}
 	path, _ := settingsPath()

@@ -102,7 +102,7 @@ func carryAccounting(previous, items []workload) []workload {
 		if prior, ok := old[item.ID]; ok {
 			items[i].Enablement = prior.Enablement
 			items[i].Aliases = prior.Aliases
-			if item.State == prior.State {
+			if item.State == prior.State && item.PID == prior.PID {
 				items[i].CPU, items[i].Memory = prior.CPU, prior.Memory
 				items[i].CPUCounter, items[i].HasCPU, items[i].SampleAt = prior.CPUCounter, prior.HasCPU, prior.SampleAt
 			}
@@ -120,6 +120,13 @@ func carryAccounting(previous, items []workload) []workload {
 
 func (w *workspace) publishInventory(mode int, items []workload, complete bool) {
 	previous := w.selected[mode]
+	previousPID := 0
+	for _, item := range w.items[mode] {
+		if item.ID == previous {
+			previousPID = item.PID
+			break
+		}
+	}
 	for _, item := range items {
 		if matchesUnitName(item, previous) {
 			w.selected[mode] = item.ID
@@ -128,6 +135,9 @@ func (w *workspace) publishInventory(mode int, items []workload, complete bool) 
 	}
 	w.recordChanges(mode, w.items[mode], items)
 	w.items[mode] = items
+	if complete {
+		w.sampleWorkloads(mode, items)
+	}
 	if mode != w.mode {
 		return
 	}
@@ -137,7 +147,7 @@ func (w *workspace) publishInventory(mode int, items []workload, complete bool) 
 		w.sampleFleet()
 	}
 	w.redrawRows()
-	if previous != w.selected[mode] {
+	if previous != w.selected[mode] || (mode == 0 && usesLaunchd() && w.tab == 1 && previousPID != w.current().PID) {
 		w.showDetail()
 	} else if !complete {
 		w.refreshDetail = true
@@ -152,4 +162,5 @@ func (w *workspace) dismissSplash() {
 	if w.pages.HasPage("splash") {
 		w.pages.RemovePage("splash")
 	}
+	w.splashView = nil
 }

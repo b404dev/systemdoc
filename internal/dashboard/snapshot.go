@@ -27,7 +27,10 @@ func collectSnapshot(ctx context.Context, request snapshotRequest) string {
 	if request.User {
 		scope = "user"
 	}
-	backend := "systemd"
+	backend := serviceManager()
+	if request.Mode == 0 && usesLaunchd() {
+		scope = launchDomain(request.User)
+	}
 	if request.Mode == 1 {
 		backend = "Docker"
 		scope = request.Endpoint
@@ -140,10 +143,11 @@ func (w *workspace) collectSnapshotView(request snapshotRequest) {
 	}()
 }
 func (w *workspace) reviewSnapshot(report string) {
+	focus := w.app.GetFocus()
 	editor := tview.NewTextArea().SetText(report, false)
 	editor.SetBorder(true).SetTitle(" REVIEW SNAPSHOT · edit to remove sensitive data · Tab to filename ")
 	file := tview.NewInputField().SetLabel(" Save as ").SetText("systemdoc-snapshot-" + time.Now().Format("20060102-150405") + ".txt")
-	close := func() { w.pages.RemovePage("snapshot-review"); w.app.SetFocus(w.table) }
+	close := func() { w.pages.RemovePage("snapshot-review"); w.app.SetFocus(focus) }
 	buttons := tview.NewForm().AddButton("Save reviewed report", func() {
 		path := strings.TrimSpace(file.GetText())
 		if path == "" {

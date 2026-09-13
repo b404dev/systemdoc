@@ -24,6 +24,15 @@ func parseCommand(text string, currentUser bool) (parsedCommand, error) {
 	}
 	name := parts[0]
 	parts = parts[1:]
+	if name == "launchctl" {
+		if !usesLaunchd() {
+			return result, fmt.Errorf("launchctl commands require macOS")
+		}
+		return parseLaunchCommand(parts)
+	}
+	if usesLaunchd() && (name == "systemctl" || name == "journalctl") {
+		return result, fmt.Errorf("macOS uses launchctl; use launchctl print system/LABEL or the Actions menu")
+	}
 	if name != "docker" && len(parts) > 0 && parts[0] == "--user" {
 		result.user = true
 		parts = parts[1:]
@@ -90,7 +99,11 @@ func (w *workspace) commandDialog() {
 	field.SetBorder(true).SetTitle(" Commands · Tab completes · Up/Down history · Escape cancels ")
 	field.SetAutocompleteFunc(func(text string) []string {
 		var candidates []string
-		for _, prefix := range []string{"systemctl status ", "systemctl restart ", "systemctl --user status ", "journalctl -u ", "docker logs ", "docker restart "} {
+		prefixes := []string{"systemctl status ", "systemctl restart ", "systemctl --user status ", "journalctl -u ", "docker logs ", "docker restart "}
+		if usesLaunchd() {
+			prefixes = []string{"launchctl print system/", "launchctl print " + launchDomain(true) + "/", "launchctl kickstart -k " + launchDomain(w.user) + "/", "docker logs ", "docker restart "}
+		}
+		for _, prefix := range prefixes {
 			if strings.HasPrefix(prefix, text) {
 				candidates = append(candidates, prefix)
 			}

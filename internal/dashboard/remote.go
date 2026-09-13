@@ -30,7 +30,7 @@ func (w *workspace) remoteDialog() {
 	binary := tview.NewInputField().SetLabel("Remote executable").SetText("systemdoc").SetFieldWidth(44)
 	identity := tview.NewInputField().SetLabel("SSH private key (optional)").SetFieldWidth(44).SetPlaceholder("Saved key or SSH config")
 	upload := tview.NewCheckbox().SetLabel("Upload temporary matching binary")
-	userScope := tview.NewCheckbox().SetLabel("Inspect the login user's systemd services")
+	userScope := tview.NewCheckbox().SetLabel("Inspect the login user's services")
 	form := tview.NewForm().AddFormItem(host).AddFormItem(username).AddFormItem(binary).AddFormItem(identity).AddFormItem(upload).AddFormItem(userScope)
 	form.SetBorder(true).SetTitle(" CONNECT TO LINUX · SSH ")
 	status := textView().SetWrap(true)

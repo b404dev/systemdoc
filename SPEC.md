@@ -4,7 +4,7 @@ This document describes the implemented application. [The user guide](docs/usage
 
 ## Scope
 
-A Linux terminal workspace with two modes: systemd services and Docker containers. Compose project workflows live within Docker. Optional AI assistance is contextual. SSH launches the full application on the target host rather than aggregating machines into a central dashboard.
+A Linux and macOS terminal workspace with two modes: native services (systemd on Linux, launchd on macOS) and Docker containers. Compose project workflows live within Docker. Optional AI assistance is contextual. SSH launches the full application on the target host rather than aggregating machines into a central dashboard.
 
 ## Components
 
@@ -12,23 +12,25 @@ A Linux terminal workspace with two modes: systemd services and Docker container
 | --- | --- |
 | Entry point | `cmd/systemdoc`; CLI flags and SSH dispatch |
 | Interface | Go, tview, tcell; one application loop and widget ownership on the UI thread |
-| Theme system | Ten application-owned Deep palettes, shared semantic colours, separate decorative glow |
+| Theme system | Five application-owned Observatory palettes, Nerd Font-first semantic icons with readable fallbacks, shared status colours, separate decorative glow, block/braille/ASCII signal renderers |
 | Systemd | `systemctl`, `journalctl`, `systemd-analyze`; system/user scope is explicit |
+| Launchd | macOS `launchctl print` scoped jobs, `ps` process accounting, plist inspection, PID-scoped unified logs, reviewed lifecycle commands |
 | Docker | Installed CLI, pinned endpoint, `ps`, `stats`, container-typed `inspect`, streaming logs |
 | Docker overview | Typed projection of inspect JSON into identity, ports, mounts, networks, runtime, labels; raw JSON remains available |
+| Host network | TCP/UDP socket ownership, interfaces, and successive-counter download/upload rates from `/proc/net/dev` or `netstat -ibn` |
 | Compose | Installed `docker compose`; project files, profiles, environment files, workdir, endpoint |
 | Settings | JSON under XDG config, owner-only atomic saves |
 | Operations | Exact-target review, cancellable subprocesses, bounded output, session history |
 | Remote | OpenSSH control connection, native authentication, optional matching static ELF upload |
 | AI | Installed external CLIs; user-reviewed context and separately validated drafts |
 
-Versions are pinned in [go.mod](go.mod). Release binaries use `CGO_ENABLED=0` for Linux amd64 and arm64.
+Versions are pinned in [go.mod](go.mod). Release binaries use `CGO_ENABLED=0` for Linux amd64/arm64 and macOS arm64.
 
 ## Data flow and responsiveness
 
 Systemd and Docker inventory jobs start independently. Identity/state inventory is published before slower resource enrichment. Each backend has one in-flight job; cached inventory makes mode switches immediate while stale data refreshes in the background. Changed scopes discard obsolete results.
 
-The selected inspector has a bounded cache and a short selection debounce. Context cancellation stops obsolete subprocess work. Log streams retain bounded tail buffers, format snapshots away from the UI thread, and show a 500-line live window. The full retained buffer is available in history/export. Refresh interval is configurable from 2 to 300 seconds.
+The selected inspector has a bounded cache and a short selection debounce. Fleet and per-workload signal histories are bounded and reuse completed inventory samples. The Storyline reuses bounded change observations. Constellation invokes the existing relationship inspection only when opened; it adds no background loop. Context cancellation stops obsolete subprocess work. Log streams retain bounded tail buffers, format snapshots away from the UI thread, and show a 500-line live window. The full retained buffer is available in history/export. Refresh interval is configurable from 2 to 300 seconds.
 
 ## Data contracts
 

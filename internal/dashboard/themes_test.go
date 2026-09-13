@@ -3,6 +3,7 @@ package dashboard
 import (
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -23,7 +24,7 @@ func contrast(a, b tcell.Color) float64 {
 	x, y := luminance(a), luminance(b)
 	return (math.Max(x, y) + 0.05) / (math.Min(x, y) + 0.05)
 }
-func TestDeepThemesKeepReadableTextAndSelection(t *testing.T) {
+func TestObservatoryThemesKeepReadableTextAndSelection(t *testing.T) {
 	names := map[string]bool{}
 	for _, p := range themes {
 		if names[p.name] {
@@ -56,11 +57,45 @@ func TestRetiredThemeFallsBackWithoutRewritingPreferences(t *testing.T) {
 	path, _ := settingsPath()
 	before, _ := os.ReadFile(path)
 	got, err := readSettings()
-	if err != nil || got.Theme != "Deep Navy" || got.Accent != original.Accent {
+	if err != nil || got.Theme != "Cathedral" || got.Accent != original.Accent {
 		t.Fatal(got, err)
 	}
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
 		t.Fatal("reading migrated settings rewrote the file")
+	}
+}
+
+func TestDeepThemeNamesMigrateToObservatoryFamily(t *testing.T) {
+	for old, want := range map[string]string{
+		"Deep Navy": "Cathedral", "Deep Violet": "Nocturne", "Deep Teal": "Crypt",
+		"Deep Ember": "Reliquary", "Deep Rose": "Blood Moon",
+	} {
+		if got := themes[themeIndex(old)].name; got != want {
+			t.Fatalf("%s migrated to %s, want %s", old, got, want)
+		}
+	}
+}
+
+func TestLegacySettingsAdoptNerdIconsOnce(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path, _ := settingsPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"theme":"Deep Navy","refresh_seconds":5,"nerd_icons":false}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readSettings()
+	if err != nil || !got.NerdIcons || got.SettingsVersion != 1 || got.Theme != "Cathedral" {
+		t.Fatal(got, err)
+	}
+	got.NerdIcons = false
+	if err := writeSettings(got); err != nil {
+		t.Fatal(err)
+	}
+	got, err = readSettings()
+	if err != nil || got.NerdIcons {
+		t.Fatal("explicit fallback mode was not retained", got, err)
 	}
 }

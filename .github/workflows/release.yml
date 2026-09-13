@@ -28,5 +28,6 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: >-
           gh release create "$RELEASE_VERSION"
-          dist/systemdoc-linux-amd64 dist/systemdoc-linux-arm64 dist/SHA256SUMS
+          dist/systemdoc-linux-amd64 dist/systemdoc-linux-arm64
+          dist/systemdoc-darwin-arm64 dist/SHA256SUMS
           --verify-tag --draft --title "Systemdoc $RELEASE_VERSION" --generate-notes

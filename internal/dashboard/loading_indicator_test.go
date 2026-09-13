@@ -18,8 +18,9 @@ func TestLoadingIndicatorKeepsFooterStableAndTracksCurrentJob(t *testing.T) {
 		t.Fatal("loading indicator is not confined to footer", x, y, width, height)
 	}
 	_, bodyY, _, bodyHeight := w.body.GetRect()
-	if bodyY+bodyHeight != y {
-		t.Fatal("unused activity-bar space remains below workload panes")
+	_, storylineY, _, storylineHeight := w.storyline.GetRect()
+	if bodyY+bodyHeight != storylineY || storylineHeight != 1 || storylineY+storylineHeight != y {
+		t.Fatal("storyline and footer do not pack directly below workload panes")
 	}
 	w.inventoryJobs[1] = &inventoryJob{}
 	w.updateDashboard()

@@ -40,6 +40,15 @@ func followLogs(ctx context.Context, mode int, user bool, item workload, update 
 	} else if user {
 		args = append([]string{"--user"}, args...)
 	}
+	if mode == 0 && usesLaunchd() {
+		var err error
+		name = "log"
+		args, err = launchLogArgs(ctx, user, item, true)
+		if err != nil {
+			update("", err.Error())
+			return
+		}
+	}
 	var output tailBuffer
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = &output

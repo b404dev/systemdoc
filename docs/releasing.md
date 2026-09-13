@@ -27,6 +27,7 @@ Replace the example tag with the version being released. `make release` requires
 ```text
 dist/systemdoc-linux-amd64
 dist/systemdoc-linux-arm64
+dist/systemdoc-darwin-arm64
 dist/SHA256SUMS
 ```
 
@@ -52,3 +53,7 @@ After publishing, run the README command in a disposable Linux environment. Conf
 Offline installer tests cover these mechanics without a GitHub release, but cannot prove that an unpublished URL is reachable.
 
 Workflow references: [GitHub Go builds](https://docs.github.com/en/actions/tutorials/build-and-test-code/go), [GitHub CLI release creation](https://cli.github.com/manual/gh_release_create), [latest-release semantics](https://docs.github.com/en/rest/releases/releases#get-the-latest-release).
+
+## macOS assets and validation
+
+Release builds and the workflow also include `systemdoc-darwin-arm64` in `SHA256SUMS`. macOS release readiness requires the live checks in [macOS services](macos.md), including installer and protected-service behaviour; cross-compilation alone is insufficient. No signing/notarization pipeline is configured.

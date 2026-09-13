@@ -1,18 +1,18 @@
 # Visual changes worth building
 
-These are proposals, not implemented product behaviour. Open [the interactive concept](assets/workspace-concept.html) in a browser to compare three directions using illustrative data. The real application remains a terminal UI; the browser typography and effects are a design reference.
+This document records implemented and proposed visual work. Open [the interactive concept](assets/workspace-concept.html) in a browser to compare the original directions using illustrative data. The real application remains a terminal UI; the browser typography and effects are a design reference.
 
-## 1. Compact workspace — highest priority
+## 1. Compact workspace — implemented
 
 **Problem:** the 120×30 dashboard spends much of its height on the header, telemetry, selection card and repeated shortcuts. Reading a unit configuration or a long Docker mount requires frequent scrolling.
 
-**Proposal:** one identity row, a three-row telemetry strip, a single filter/view row, then the inventory and inspector. Compress the selected identity into two rows. Give focus a bright edge while secondary borders recede. Retain the Deep palettes and semantic state labels. Add adjustable inventory/inspector proportions and save them with a view.
+**Delivered:** one identity row, a compact telemetry strip, an explicit five-suite rail, visible Control Deck and saved-view entry points, then the inventory and inspector. The selected identity is compressed to one content row. Focus retains a bright edge while secondary borders recede. `[` / `]` adjust inventory/inspector proportions from 30–70%, and saved views restore that split.
 
 **Value:** several more rows of useful content, a clearer selected workload, and a deliberate visual hierarchy. Saved views become visible entry points instead of living only in Actions.
 
-**Scope:** layoutDashboard, selection card, chrome/footer, preferences and saved-view schema. Keyboard pane resizing first; mouse dragging can follow. Preserve the existing keyboard bindings and responsive stacking/zoom.
+**Implementation:** `layoutDashboard`, selection card, chrome/footer, preferences and the saved-view schema share the compact model. Existing navigation, responsive stacking and zoom are preserved. Mouse dragging remains a possible follow-up.
 
-**Acceptance:** at least six extra content rows at 120×30 relative to the current default; no clipped essential controls at 80×24; saved views restore pane ratio; focused pane recognizable in every theme without relying on colour alone.
+**Verification:** the actual 120×30 cell fixture gains six content rows over the prior layout. Tiny-screen tests retain essential content, saved-view tests cover pane ratio, and all themes retain border plus selection-pointer focus cues.
 
 ## 2. Timer timeline — distinctive and useful
 
@@ -40,8 +40,7 @@ These are proposals, not implemented product behaviour. Open [the interactive co
 
 ## Suggested sequence
 
-1. Compact workspace and saved-view access: medium change, broad daily benefit.
-2. Timer timeline: medium change, builds on the new read-only timer browser.
-3. Troubleshooting workspace: larger change, combines the new search and report tools.
+1. Timer timeline: medium change, builds on the read-only timer browser.
+2. Troubleshooting workspace: larger change, combines the search and report tools.
 
 Verify actual tcell frames at 160×44, 120×30 and 80×24 across all themes, including long names, empty results, unavailable backends and overlays. Browser mockups cannot establish terminal readability, geometry or keyboard correctness.

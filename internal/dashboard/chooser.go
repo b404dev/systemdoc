@@ -54,6 +54,7 @@ func (w *workspace) choose(page, title string, choices []choice) {
 	})
 	populate("")
 	w.pages.AddPage(page, centered(panel, 86, 24), true, true)
+	w.app.SetFocus(search)
 }
 
 func matchesChoice(text, query string) bool {

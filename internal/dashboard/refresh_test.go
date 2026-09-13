@@ -23,7 +23,7 @@ case "$1" in
  ps) printf '%s\n' '{"ID":"abc","Names":"web","State":"running","Status":"Up"}' ;;
  stats)
   : > "$STATS_STARTED"
-  while [ ! -f "$STATS_RELEASE" ]; do /usr/bin/sleep 0.01; done
+  while [ ! -f "$STATS_RELEASE" ]; do /bin/sleep 0.01; done
   printf '%s\n' '{"ID":"abc","CPUPerc":"25%","MemUsage":"32MiB / 96MiB"}' ;;
 esac
 `
@@ -236,7 +236,7 @@ func TestSlowDetailRefreshKeepsLatestReadingPosition(t *testing.T) {
 	t.Setenv("DETAIL_OUTPUT", fixture)
 	script := `#!/bin/sh
 : > "$DETAIL_STARTED"
-while [ ! -f "$DETAIL_RELEASE" ]; do /usr/bin/sleep 0.01; done
+while [ ! -f "$DETAIL_RELEASE" ]; do /bin/sleep 0.01; done
 /bin/cat "$DETAIL_OUTPUT"
 `
 	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0700); err != nil {

@@ -10,17 +10,19 @@ import (
 )
 
 type savedView struct {
-	Name        string `json:"name"`
-	Mode        int    `json:"mode"`
-	User        bool   `json:"user"`
-	Filter      string `json:"filter"`
-	QuickFilter int    `json:"quick_filter"`
-	Sort        int    `json:"sort"`
-	Favorites   bool   `json:"favorites_only"`
-	Layout      string `json:"layout"`
-	Tab         int    `json:"tab"`
-	Drawer      bool   `json:"log_drawer"`
-	Endpoint    string `json:"endpoint,omitempty"`
+	Name           string `json:"name"`
+	ServiceManager string `json:"service_manager,omitempty"`
+	Mode           int    `json:"mode"`
+	User           bool   `json:"user"`
+	Filter         string `json:"filter"`
+	QuickFilter    int    `json:"quick_filter"`
+	Sort           int    `json:"sort"`
+	Favorites      bool   `json:"favorites_only"`
+	Layout         string `json:"layout"`
+	PaneRatio      int    `json:"pane_ratio,omitempty"`
+	Tab            int    `json:"tab"`
+	Drawer         bool   `json:"log_drawer"`
+	Endpoint       string `json:"endpoint,omitempty"`
 }
 
 func (v savedView) validate() error {
@@ -30,10 +32,16 @@ func (v savedView) validate() error {
 	if v.Layout != "" && v.Layout != "auto" && v.Layout != "stacked" && v.Layout != "side-by-side" {
 		return fmt.Errorf("invalid saved layout")
 	}
+	if v.PaneRatio != 0 && (v.PaneRatio < 30 || v.PaneRatio > 70) {
+		return fmt.Errorf("invalid saved pane ratio")
+	}
 	return nil
 }
 func (w *workspace) captureView(name string) savedView {
-	v := savedView{Name: strings.TrimSpace(name), Mode: w.mode, User: w.user, Filter: w.filters[w.mode], QuickFilter: w.quickFilter, Sort: w.sortMode, Favorites: w.favoriteOnly, Layout: w.settings.Layout, Tab: w.tab, Drawer: w.drawerOpen}
+	v := savedView{Name: strings.TrimSpace(name), Mode: w.mode, User: w.user, Filter: w.filters[w.mode], QuickFilter: w.quickFilter, Sort: w.sortMode, Favorites: w.favoriteOnly, Layout: w.settings.Layout, PaneRatio: w.settings.PaneRatio, Tab: w.tab, Drawer: w.drawerOpen}
+	if w.mode == 0 {
+		v.ServiceManager = serviceManager()
+	}
 	if w.mode == 1 {
 		v.Endpoint = dockerEndpoint()
 	}
@@ -45,6 +53,15 @@ func (w *workspace) applySavedView(v savedView) error {
 	}
 	if v.Mode == 1 && v.Endpoint != dockerEndpoint() {
 		return fmt.Errorf("this view belongs to %s; current endpoint is %s", v.Endpoint, dockerEndpoint())
+	}
+	if v.Mode == 0 {
+		manager := v.ServiceManager
+		if manager == "" {
+			manager = "systemd"
+		}
+		if manager != serviceManager() {
+			return fmt.Errorf("this view uses %s; this host uses %s", manager, serviceManager())
+		}
 	}
 	w.savedQuickFilters[w.mode] = w.quickFilter
 	if w.user != v.User && v.Mode == 0 {
@@ -64,6 +81,9 @@ func (w *workspace) applySavedView(v savedView) error {
 	w.sortMode = v.Sort
 	w.favoriteOnly = v.Favorites
 	w.settings.Layout = v.Layout
+	if v.PaneRatio != 0 {
+		w.settings.PaneRatio = v.PaneRatio
+	}
 	w.tab = v.Tab
 	w.drawerOpen = v.Drawer
 	w.filters[v.Mode] = v.Filter
@@ -77,7 +97,7 @@ func (w *workspace) applySavedView(v savedView) error {
 	return nil
 }
 func (w *workspace) savedViews() {
-	choices := []choice{{"Save current view", "Remember mode, scope, filters, sort, layout, tab and log drawer", w.saveViewDialog}}
+	choices := []choice{{"Save current view", "Remember mode, scope, filters, sort, pane split, layout, tab and log drawer", w.saveViewDialog}}
 	for _, v := range w.settings.Views {
 		v := v
 		scope := "system services"

@@ -16,6 +16,7 @@ import (
 func TestSavedViewRestoresWorkspaceAndRoundTrips(t *testing.T) {
 	w := testWorkspace()
 	w.settings.Layout = "stacked"
+	w.settings.PaneRatio = 61
 	w.quickFilter = 2
 	w.sortMode = 3
 	w.tab = 2
@@ -39,8 +40,49 @@ func TestSavedViewRestoresWorkspaceAndRoundTrips(t *testing.T) {
 	if err = w.applySavedView(restored.Views[0]); err != nil {
 		t.Fatal(err)
 	}
-	if w.current().ID != "worker.service" || w.quickFilter != 2 || w.sortMode != 3 || w.settings.Layout != "stacked" || !w.drawerOpen || w.tab != 2 || w.search.GetText() != "worker" {
+	if w.current().ID != "worker.service" || w.quickFilter != 2 || w.sortMode != 3 || w.settings.Layout != "stacked" || w.settings.PaneRatio != 61 || !w.drawerOpen || w.tab != 2 || w.search.GetText() != "worker" {
 		t.Fatalf("view not restored: %+v", w.captureView("Failures"))
+	}
+}
+
+func TestControlDeckDocumentsFiveSuites(t *testing.T) {
+	w := testWorkspace()
+	w.controlDeck()
+	_, page := w.pages.GetFrontPage()
+	panel := page.(*overlay).content.(*tview.Flex)
+	list := panel.GetItem(1).(*tview.List)
+	if list.GetItemCount() != 5 {
+		t.Fatalf("control deck has %d suites", list.GetItemCount())
+	}
+	for i, want := range []string{"SERVICES", "CONTAINERS", "NETWORK", "PROCESSES", "STORAGE"} {
+		name, description := list.GetItemText(i)
+		if !strings.Contains(name, want) || strings.TrimSpace(description) == "" {
+			t.Fatalf("suite %d is not self-documenting: %q / %q", i, name, description)
+		}
+	}
+}
+
+func TestPaneResizeChangesGeometryAndIsBounded(t *testing.T) {
+	w := testWorkspace()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	w.app.SetScreen(screen)
+	defer screen.Fini()
+	screen.SetSize(120, 30)
+	w.app.ForceDraw()
+	_, _, before, _ := w.table.GetRect()
+	w.resizePanes(10)
+	w.app.ForceDraw()
+	_, _, after, _ := w.table.GetRect()
+	if after <= before || w.settings.PaneRatio != 56 {
+		t.Fatal("inventory pane did not grow", before, after, w.settings.PaneRatio)
+	}
+	w.resizePanes(100)
+	if w.settings.PaneRatio != 70 {
+		t.Fatal("pane ratio exceeded upper bound", w.settings.PaneRatio)
+	}
+	w.resizePanes(-100)
+	if w.settings.PaneRatio != 30 {
+		t.Fatal("pane ratio exceeded lower bound", w.settings.PaneRatio)
 	}
 }
 func TestSavedViewRejectsInvalidAndForeignEndpoint(t *testing.T) {
@@ -57,12 +99,12 @@ func TestSavedViewRejectsInvalidAndForeignEndpoint(t *testing.T) {
 }
 func TestSavedViewsPersistWithoutLosingPreferences(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	s := settings{Theme: "Deep Teal", RefreshSeconds: 10, Views: []savedView{{Name: "Failures", Filter: "state:failed", Layout: "auto"}}}
+	s := settings{Theme: "Crypt", RefreshSeconds: 10, Views: []savedView{{Name: "Failures", Filter: "state:failed", Layout: "auto"}}}
 	if err := writeSettings(s); err != nil {
 		t.Fatal(err)
 	}
 	got, err := readSettings()
-	if err != nil || len(got.Views) != 1 || got.Views[0].Filter != "state:failed" || got.Theme != "Deep Teal" {
+	if err != nil || len(got.Views) != 1 || got.Views[0].Filter != "state:failed" || got.Theme != "Crypt" {
 		t.Fatal(got, err)
 	}
 }
@@ -175,7 +217,7 @@ esac
 	}
 }
 func TestNewFeatureDialogsDrawAndEscape(t *testing.T) {
-	for _, open := range []func(*workspace){func(w *workspace) { w.savedViews() }, func(w *workspace) { w.saveViewDialog() }, func(w *workspace) { w.timers() }, func(w *workspace) { w.logSearch() }, func(w *workspace) { w.snapshotDialog() }, func(w *workspace) { w.reviewSnapshot("example\n[red] literal text") }} {
+	for _, open := range []func(*workspace){func(w *workspace) { w.controlDeck() }, func(w *workspace) { w.savedViews() }, func(w *workspace) { w.saveViewDialog() }, func(w *workspace) { w.timers() }, func(w *workspace) { w.logSearch() }, func(w *workspace) { w.snapshotDialog() }, func(w *workspace) { w.reviewSnapshot("example\n[red] literal text") }} {
 		for _, size := range [][2]int{{80, 24}, {120, 30}, {40, 12}} {
 			w := testWorkspace()
 			open(w)
@@ -216,6 +258,45 @@ func TestNestedChooserAndMessageRestoreFocus(t *testing.T) {
 		t.Fatal("closing a message lost underlying focus")
 	}
 }
+
+func TestConfirmationTakesFocusAndKeyboardRunWorks(t *testing.T) {
+	w := testWorkspace()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	w.app.SetScreen(screen)
+	defer screen.Fini()
+	screen.SetSize(120, 30)
+	w.app.SetFocus(w.table)
+	ran := false
+	w.confirm("Terminate · PID 42", "review exact target", func() { ran = true })
+	front, page := w.pages.GetFrontPage()
+	if front != "confirm" {
+		t.Fatalf("confirmation did not open: %s", front)
+	}
+	if _, ok := w.app.GetFocus().(*tview.TextView); !ok {
+		t.Fatalf("confirmation did not take keyboard focus: %T", w.app.GetFocus())
+	}
+	dialog, ok := page.(*overlay)
+	if !ok {
+		t.Fatalf("confirmation is not a bounded overlay: %T", page)
+	}
+	w.app.ForceDraw()
+	x, y, width, height := dialog.content.GetRect()
+	if x <= 0 || y <= 0 || width >= 120 || height >= 30 {
+		t.Fatalf("confirmation obscures the workspace: rect %d,%d %dx%d", x, y, width, height)
+	}
+	panel := dialog.content.(*tview.Flex)
+	if title := panel.GetTitle(); !strings.Contains(title, "SYSTEMDOC") || !strings.Contains(title, "APPROVAL") {
+		t.Fatalf("confirmation does not use branded action chrome: %q", title)
+	}
+	page.InputHandler()(tcell.NewEventKey(tcell.KeyRune, 'y', 0), func(p tview.Primitive) { w.app.SetFocus(p) })
+	if !ran {
+		t.Fatal("y did not run the reviewed action")
+	}
+	if front, _ := w.pages.GetFrontPage(); front != "main" || !w.table.HasFocus() {
+		t.Fatal("completed confirmation did not restore table focus")
+	}
+}
+
 func TestSnapshotEditorFocusCycle(t *testing.T) {
 	w := testWorkspace()
 	w.reviewSnapshot("example")

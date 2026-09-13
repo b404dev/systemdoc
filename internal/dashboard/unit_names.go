@@ -14,4 +14,4 @@ func matchesUnitName(item workload, name string) bool {
 	return false
 }
 
-func isTemplate(item workload) bool { return strings.HasSuffix(item.ID, "@.service") }
+func isTemplate(item workload) bool { return !usesLaunchd() && strings.HasSuffix(item.ID, "@.service") }

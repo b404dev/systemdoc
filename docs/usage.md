@@ -6,8 +6,25 @@
 
 *Illustrative container fixture rendered by the actual TUI; scroll or expand for all fields.*
 
-## Two modes
-**Systemd** combines loaded services and installed unit files, separates enablement from runtime state, and shows available CPU/memory accounting. The inspector provides status, streaming journal, source configuration, sampled resources, and dependencies. Runtime aliases such as `dbus.service` resolve to their canonical service; searching an alias finds that service without duplicating its active count. Template files (`name@.service`) are labelled separately and require a named instance for runtime inspection. An installed file absent from the runtime snapshot is labelled `unknown`, not guessed inactive or unloaded. The selected-service card separates runtime state/substate, load state, and boot enablement. Toggle system/user scope with `u`. Press `i` or click **Active only** to hide inactive services; the systemd choice persists between sessions. `--active-only` enables the filter at launch, including over SSH.
+## The five feature suites
+
+Systemdoc is organised around five live operational suites. Press `0` from any suite to open the searchable **Control Deck**, which describes all five and routes directly to one. Press `1`–`5` for immediate switching.
+
+| Suite | Purpose | Use it when you need to… |
+| --- | --- | --- |
+| **1 · Services** | Native service control and diagnosis | Find failed systemd/launchd jobs, inspect status/configuration/dependencies, follow or search logs, review timers and run exact-target lifecycle actions. |
+| **2 · Containers** | Docker runtime and Compose workflows | Read health/resources, inspect ports/mounts/networks/limits, follow logs, examine raw JSON, or validate and operate a Compose project. |
+| **3 · Network** | Host ports, flows, interfaces and speed | Identify a listener or connection owner, filter by port/PID/process/protocol/state, inspect interfaces, watch download/upload throughput, or jump to process detail. |
+| **4 · Processes** | Host resource, ownership and signal explorer | Rank CPU/RSS, inspect parent/child trees and full commands, find zombies, review a process signal, or pivot from a PID to its service and ports. |
+| **5 · Storage** | Filesystem capacity and reclaim investigation | Find full mounts or inode pressure, sort/filter storage, and identify deleted files that are still held open. |
+
+Each suite uses the same polling preference, numbered navigation rail, Deep theme, filter conventions, focus styling and reviewed export model. Observations stay tied to their actual collector; the application does not pretend separately sampled host data is one atomic snapshot.
+
+## Services and containers
+
+Services use systemd on Linux and launchd on macOS. See [macOS services](macos.md) for GUI/system scopes, supported actions, PID-scoped logs and current limits. The systemd-specific workflows below apply to Linux.
+
+**Systemd** combines loaded services and installed unit files, separates enablement from runtime state, and shows available CPU/memory accounting. The inspector provides status, streaming journal, source configuration, sampled resources, and dependencies. Runtime aliases such as `dbus.service` resolve to their canonical service; searching an alias finds that service without duplicating its active count. Template files (`name@.service`) are labelled separately and require a named instance for runtime inspection. An installed file absent from the runtime snapshot is labelled `unknown`, not guessed inactive or unloaded. The compact selected-service band shows runtime state/substate, boot enablement and resources; Overview retains load state and the full description. Toggle system/user scope with `u`. Press `i` or click **Active only** to hide inactive services; the systemd choice persists between sessions. `--active-only` enables the filter at launch, including over SSH.
 
 **Docker** shows observed containers with state and available CPU/memory statistics. The selected-workload card and expanded table expose health/status, image, and Compose project membership. The Overview tab shows container name and ID, image, state and health, restart policy, Compose membership, host/container ports, volumes and bind mounts, attached networks and addresses, runtime options, limits, and labels. Published ports and exposed-only ports are distinguished; configured bindings without a live mapping are labeled. Mounts include access mode, source, and destination. Environment values remain in the full inspect JSON (`c`), rather than the overview. `d` opens Connections with ports, mounts, networks, and labels; `l` streams logs and `r` reads live resource statistics. Structured Docker views wrap long paths and values; `z` expands them. Press `p` for Compose projects, including registered projects whose containers are down.
 
@@ -22,26 +39,41 @@ Unavailable backends produce a visible error without disabling the other mode. E
 ## Live workspace
 
 While the same workload remains selected, background updates preserve the focused pane and your current inspector scroll position, including scrolling performed while a refresh is still loading. Live logs retain their separate pause/follow controls.
-Four cards show active workloads, those needing attention, summed workload CPU, and tracked memory. Click Active or Attention to filter the list; click again to clear. `A` cycles the same state filters from the keyboard. The always-visible **i Active only** button directly toggles active/running workloads. Each mode keeps its own filter when you switch. Counts describe the current backend inventory; resource totals include only workloads reporting counters, **not whole-host usage**. CPU uses one logical CPU as 100% and may exceed it. Missing values stay `—`. The CPU/memory sparklines retain 32 inventory samples and use an automatic scale; the first samples are collected from your machine.
+Four Pulse cards show active workloads, those needing attention, summed workload CPU, and tracked memory. After a second sample, all four become real history charts with the latest direction shown beside the value. Click Active or Attention to filter the list; click again to clear. `A` cycles the same state filters from the keyboard. The always-visible **i Active only** button directly toggles active/running workloads. Each mode keeps its own filter when you switch. Counts describe the current backend inventory; resource totals include only workloads reporting counters, **not whole-host usage**. CPU uses one logical CPU as 100% and may exceed it. Missing values stay `—`. Charts retain bounded inventory samples and use an automatic scale; they never create an additional collector.
 
-The list uses a dark continuous surface, semantic state colours, and a gradient selection highlight with a pointer. `S` sorts by name, attention, CPU, or memory without changing the selected workload. `›` marks a state change observed within the previous 15 seconds. A small muted spinner in the bottom-right appears only while the current backend refreshes, including resource sampling. The sample timestamp stays fixed between refreshes. Press `v` for observed activity; polling may miss brief transitions.
+The list uses a dark continuous surface, semantic state colours, and a gradient selection highlight with a pointer. `S` sorts by name, attention, CPU, or memory without changing the selected workload. `›` marks a state change observed within the previous 15 seconds. The selected-workload Focus Lens includes its own bounded CPU and memory trails. The one-line **Storyline** rail shows the latest state transitions across the current suite; click it or press `I` for the complete bounded session view, while `v` keeps the selected workload's activity view. Polling may miss brief transitions.
 
-The inspector keeps the selected workload's identity, state, description and resources above clickable tabs. Press `L` to open a separate live log drawer and keep logs visible while reading configuration or metrics. The drawer follows selection, cancels the old stream when the target changes, and retains at most 1 MiB. Live panes render the newest 500 matching lines to keep redraws fast; `h` opens the full retained buffer as a frozen history view. `e` exports the retained buffer of the focused log pane, rather than just its live window. Tab cycles through the list, inspector and open drawer; Space pauses the focused log view, `g` follows again, and `L` closes the drawer.
+Press `x` for **System Constellation**, an on-demand relationship map for the selected workload. Services show state, process, resources and reported systemd dependencies; containers show identity, project, image, ports, mounts and networks from the existing Connections collector. The map does not add background polling. Press `G` to cycle **blocks**, **braille**, and **ASCII** signal graphics; the choice is saved and applies to dashboards, Network Speed, Process Explorer, Storage and resource history. The footer shows the active polling interval; click it or press `,` from any live page to set 2–300 seconds. A small muted spinner appears only while the current backend refreshes.
 
-Press `z` to expand the focused pane. An expanded workload list reveals boot/substate/description columns for systemd, or project/health/image for Docker. Escape restores the dashboard. At 110 columns or wider, automatic layout places list and inspector side by side. Tall, narrower terminals stack them; smaller terminals show the focused pane. Telemetry cards collapse when space is tight. Actions, sorting, themes and preferences open in bounded overlays.
+![System Constellation mapping a selected service to its process and dependencies](assets/constellation.png)
+
+*Illustrative relationship fixture rendered by the actual TUI.*
+
+The inspector keeps the selected workload's identity, state and resources in a compact band above clickable tabs; Overview carries the longer description and backend detail. Press `L` to open a separate live log drawer and keep logs visible while reading configuration or metrics. The drawer follows selection, cancels the old stream when the target changes, and retains at most 1 MiB. Live panes render the newest 500 matching lines to keep redraws fast; `h` opens the full retained buffer as a frozen history view. `e` exports the retained buffer of the focused log pane, rather than just its live window. Tab cycles through the list, inspector and open drawer; Space pauses the focused log view, `g` follows again, and `L` closes the drawer.
+
+Press `z` to expand the focused pane. An expanded workload list reveals boot/substate/description columns for systemd, or project/health/image for Docker. Escape restores the dashboard. At 110 columns or wider, automatic layout places list and inspector side by side. `[` gives more room to the inspector and `]` gives more room to inventory, in five-percent steps from 30–70%. Tall, narrower terminals stack them; smaller terminals show the focused pane. Telemetry cards collapse when space is tight. Actions, sorting, themes and preferences open in bounded overlays.
 
 ## Keyboard controls
 | Key | Action |
 | --- | --- |
+| 0 | Open the Control Deck and descriptions of all five suites |
 | 1 / 2 | Systemd / Docker |
+| 3 | Ports and networking |
+| 4 | [Process Explorer](host-panels.md) |
+| 5 | [Disk & Storage](host-panels.md) |
+| F9 / K | Open reviewed signal actions for the selected process in Process Explorer |
 | / | Inventory filter |
+| , | Change live polling interval |
 | Arrows or j/k | Navigate |
 | Enter / Tab | Inspect / cycle panes, including the open log drawer |
 | i | Toggle active-only; systemd choice is saved |
 | A / S | Cycle state filter / choose sorting |
 | h | Full retained log history for the focused log pane |
 | z / Escape | Expand focused pane / restore dashboard |
+| [ / ] | Give the inspector / inventory more space |
 | L | Toggle independent live log drawer |
+| x / I | Open selected workload Constellation / suite-wide incident Storyline |
+| G | Cycle block, braille and ASCII signal graphics |
 | o / l / c / r / d | Overview / logs / config / resources / dependencies (Docker: connections) |
 | R | Review restart of selected workload |
 | a | Searchable actions; type to filter, Down enters results |
@@ -51,7 +83,7 @@ Press `z` to expand the focused pane. An expanded workload list reveals boot/sub
 | f / F | Toggle favourite / show favourites only |
 | P | Pause/resume inventory refresh |
 | Space / g | Pause/resume log follow |
-| s | Search retained logs (regex, time bounds, context) or apply a live literal filter |
+| s | Network speed view; elsewhere, search/filter the focused live logs |
 | V | Save, open, replace or delete workspace views |
 | T | Browse systemd timers in system/user scope |
 | E | Collect, review and export a troubleshooting snapshot |
@@ -75,7 +107,7 @@ boot:masked
 
 ## Saved views
 
-Press **V**, or Actions → Saved views, to save the current workspace with a name. A view remembers backend mode, systemd scope, inventory text and state filters, sorting, favourites-only, layout, inspector tab and log-drawer visibility. Choose an existing view to open, replace with the current workspace, or delete it. Names must be unique. Views are saved in settings; saving a view does not save log buffers or workload data.
+Press **V**, click **Views**, or use Actions → Saved views to save the current workspace with a name. A view remembers backend mode, systemd scope, inventory text and state filters, sorting, favourites-only, layout, pane split, inspector tab and log-drawer visibility. Choose an existing view to open, replace with the current workspace, or delete it. Names must be unique. Views are saved in settings; saving a view does not save log buffers or workload data.
 
 Docker views record the current endpoint and refuse to open against a different endpoint. Launch Systemdoc with the matching Docker context to use them. Views do not switch remote hosts. Opening a systemd view restores its recorded system/user scope and refreshes that inventory.
 
@@ -100,7 +132,7 @@ Press **E**, or Actions → Troubleshooting snapshot, with a workload selected. 
 Review and edit the report before saving. Tab moves from the editor to filename and save controls; Shift-Tab moves back. The report is written with owner-only permissions and never replaces an existing path. Nothing is sent to an external service. Native service status can include journal excerpts even when the separate recent-log section is omitted; overview, labels, logs and configuration may contain sensitive values. No automatic redaction is applied.
 
 ## Management workflows
-Press **Shift+R** or click **R Restart selected workload** in the inspector to restart the selected service or container. Review the exact target and command, then choose Run. Systemd uses the current system/user scope; remote sessions run the command on the remote host. Lowercase `r` still opens resource metrics.
+Press **Shift+R**, or choose restart from the visible **Actions** menu, to restart the selected service or container. Review the exact target and command, then choose Run. Systemd uses the current system/user scope; remote sessions run the command on the remote host. Lowercase `r` still opens resource metrics.
 
 Open Actions for service start/stop/restart/reload, enable/disable, mask/unmask, and reset-failed. Docker actions include start/stop/restart, pause/unpause, and removal. Every lifecycle action currently presents an exact-target review. Operation history distinguishes command completion from actual workload health and retains bounded output.
 

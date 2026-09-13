@@ -14,7 +14,7 @@ systemdoc --ssh alice@server --docker --docker-context default
 systemdoc --ssh alice@server --ssh-port 2222 --identity ~/.ssh/server_key
 ```
 
-**Actions → Run on remote host** asks for the host and SSH username in separate fields. Leave the username blank to use SSH configuration (or the username in `user@host`). The CLI equivalent is `--ssh-user`; this is separate from `--user`, which selects the remote systemd user manager. Conflicting usernames are rejected before connecting. OpenSSH handles password/key-passphrase prompts, host keys, authentication, agent use, and settings such as ProxyJump. No credentials are copied. The entire application runs remotely, so settings, systemd, Docker access, and AI authentication belong to the remote user. Exiting the remote app returns to the local shell, or the local application when launched through **Actions → Run on remote host**.
+**Actions → Run on remote host** asks for the host and SSH username in separate fields. Leave the username blank to use SSH configuration (or the username in `user@host`). The CLI equivalent is `--ssh-user`; this is separate from `--user`, which selects remote user services (systemd or the launchd GUI domain). Conflicting usernames are rejected before connecting. OpenSSH handles password/key-passphrase prompts, host keys, authentication, agent use, and settings such as ProxyJump. No credentials are copied. The entire application runs remotely, so settings, native service access, Docker access, and AI authentication belong to the remote user. Exiting the remote app returns to the local shell, or the local application when launched through **Actions → Run on remote host**.
 
 On the first connection to each host/login, the app offers **Set up key**, **Use existing SSH**, or **Cancel**. Key setup uses `ssh-copy-id` to install only the public key on the remote account. With no selected identity, it creates `~/.ssh/systemdoc_ed25519` if needed using an interactive `ssh-keygen` passphrase prompt. It preserves existing keys. The chosen identity and whether the offer was shown are saved locally; passwords and private-key contents are never stored in Systemdoc settings. The connection form also has **Set up key** for repeating the workflow later.
 
@@ -36,7 +36,7 @@ To upload a temporary executable for this session:
 systemdoc --ssh alice@server --upload
 ```
 
-Upload checks Linux/CPU compatibility and requires a static ELF binary. It creates a private `/tmp/systemdoc.*` directory, transfers the executable over SSH, runs it with a terminal, and attempts cleanup on exit. It never installs globally. If `/tmp` is mounted `noexec`, install the binary in an executable location and use `--remote-bin`. A failed connection may leave the temporary directory; the application reports the path when cleanup fails.
+Upload checks OS/CPU compatibility and requires a static ELF binary for Linux or a matching Mach-O executable for macOS. It creates a private `/tmp/systemdoc.*` directory, transfers the executable over SSH, runs it with a terminal, and attempts cleanup on exit. It never installs globally. If `/tmp` is mounted `noexec`, install the binary in an executable location and use `--remote-bin`. A failed connection may leave the temporary directory; the application reports the path when cleanup fails.
 
 For another architecture:
 
@@ -45,4 +45,8 @@ make cross
 systemdoc --ssh alice@arm-server --upload --upload-binary ./bin/systemdoc-linux-arm64
 ```
 
-Upload supports Linux amd64 and arm64. The installed-binary path works wherever a compatible Systemdoc build runs. No remote host was available for an authenticated end-to-end test during development; SSH argument construction, quoting, and validation have automated coverage.
+Upload supports Linux amd64/arm64 and macOS arm64. The installed-binary path works wherever a compatible Systemdoc build runs. No remote host was available for an authenticated end-to-end test during development; SSH argument construction, quoting, and validation have automated coverage.
+
+## macOS hosts
+
+The remote app selects launchd when running on macOS. `--upload` accepts a matching Apple Silicon Mach-O executable; use `--upload-binary` when the local binary targets a different OS/architecture. User service scope means the remote user’s GUI domain, which may be absent on headless SSH hosts. See [macOS services](macos.md).

@@ -49,30 +49,6 @@ func parseCounters(text string, previous *metricSample, now time.Time) metricSam
 	return s
 }
 
-func sparkline(values []float64) string {
-	const bars = "▁▂▃▄▅▆▇█"
-	runes := []rune(bars)
-	max := 0.0
-	for _, v := range values {
-		if v > max {
-			max = v
-		}
-	}
-	var b strings.Builder
-	for _, v := range values {
-		if v < 0 {
-			b.WriteRune('·')
-			continue
-		}
-		index := 0
-		if max > 0 {
-			index = int(v / max * 7)
-		}
-		b.WriteRune(runes[index])
-	}
-	return b.String()
-}
-
 func (w *workspace) resourceOutput(id, raw string) string {
 	if w.metrics == nil {
 		w.metrics = map[string][]metricSample{}
@@ -105,5 +81,5 @@ func (w *workspace) resourceOutput(id, raw string) string {
 	if sample.validMemory {
 		memlabel = fmt.Sprintf("%.1f MiB", float64(sample.memory)/1024/1024)
 	}
-	return fmt.Sprintf("CPU · %% of one logical CPU   %s\n%s\n\nMemory   %s\n%s\n\nSelected-workload history · %d samples · automatic scale\nUnavailable samples: ·\n\nBackend counters\n%s", cpulabel, sparkline(cpu), memlabel, sparkline(memory), len(history), raw)
+	return fmt.Sprintf("CPU · %% of one logical CPU   %s\n%s\n\nMemory   %s\n%s\n\nSelected-workload history · %d samples · automatic scale · %s glyphs\nUnavailable samples: ·\n\nBackend counters\n%s", cpulabel, signalChart(cpu, w.settings.GraphMode), memlabel, signalChart(memory, w.settings.GraphMode), len(history), graphMode(w.settings.GraphMode), raw)
 }

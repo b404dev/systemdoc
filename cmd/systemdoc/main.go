@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"systemdoc/internal/dashboard"
 	"systemdoc/internal/remote"
@@ -12,7 +13,7 @@ import (
 var version = "dev"
 
 func main() {
-	user := flag.Bool("user", false, "Inspect the systemd user manager")
+	user := flag.Bool("user", false, "Inspect user services (systemd on Linux, launchd GUI agents on macOS)")
 	docker := flag.Bool("docker", false, "Open Docker mode")
 	activeOnly := flag.Bool("active-only", false, "Show only active services or running containers")
 	filter := flag.String("filter", "", "Initial workload filter (for example state:failed)")
@@ -25,7 +26,7 @@ func main() {
 	identity := flag.String("identity", "", "SSH identity file")
 	remoteBin := flag.String("remote-bin", "systemdoc", "Remote executable name or absolute path")
 	upload := flag.Bool("upload", false, "Upload a temporary matching static binary for this SSH session")
-	uploadBinary := flag.String("upload-binary", "", "Use this static Linux binary with --upload")
+	uploadBinary := flag.String("upload-binary", "", "Use this matching platform binary with --upload")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "Unexpected arguments; use --help for options.")
@@ -34,6 +35,10 @@ func main() {
 	if *showVersion {
 		fmt.Println("systemdoc " + version)
 		return
+	}
+	if runtime.GOOS == "darwin" && runtime.GOARCH != "arm64" {
+		fmt.Fprintln(os.Stderr, "macOS support requires Apple Silicon (arm64).")
+		os.Exit(2)
 	}
 	if *host != "" {
 		args := []string{}

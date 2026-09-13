@@ -44,6 +44,9 @@ type operation struct {
 }
 
 func actionArgs(mode int, user bool, item workload, verb string) (string, []string, error) {
+	if mode == 0 && usesLaunchd() {
+		return launchActionArgs(user, item, verb)
+	}
 	if item.ID == "" || strings.HasPrefix(item.ID, "-") || strings.ContainsAny(item.ID, "*?[") {
 		return "", nil, fmt.Errorf("select a valid workload")
 	}
@@ -87,15 +90,39 @@ func (w *workspace) confirmAction(verb string) {
 		w.message("Cannot perform action", err.Error())
 		return
 	}
-	w.confirm(verb+" · "+item.Name, name+" "+strings.Join(args, " "), func() { w.execute(item.Name, name, args) })
+	detail := name + " " + strings.Join(args, " ")
+	if w.mode == 0 && usesLaunchd() {
+		detail += "\n\nStop sends SIGTERM; launchd may restart a KeepAlive/on-demand job. Enable/disable changes future eligibility and does not load/unload or immediately stop a job."
+	}
+	w.confirm(verb+" · "+item.Name, detail, func() { w.execute(item.Name, name, args) })
 }
 
 func (w *workspace) confirm(title, detail string, run func()) {
+	focus := w.app.GetFocus()
+	p := w.palette()
+	surface := tcell.GetColor(p.surface)
 	view := textView().SetDynamicColors(true).SetWrap(true).SetScrollable(true)
-	view.SetText(richOutput(title+"\n\n"+detail, 2, w.palette())).SetBorder(true).SetTitle(" Review action · Tab switches to buttons ")
-	close := func() { w.pages.RemovePage("confirm"); w.app.SetFocus(w.table) }
-	buttons := tview.NewForm().AddButton("Cancel", close).AddButton("Run", func() { close(); run() })
+	view.SetBackgroundColor(surface)
+	view.SetText("[" + p.warning + "::b]" + w.icon(iconLock) + " APPROVAL REQUIRED[-::-]\n" +
+		"[" + p.text + "::b]" + tview.Escape(title) + "[-::-]\n\n" +
+		"[" + p.muted + "]Exact command or change[-]\n" + richOutput(detail, 2, p) + "\n\n" +
+		"[" + p.muted + "]Nothing runs until you approve.  y approve · Esc cancel · Tab actions[-]")
+	close := func() { w.pages.RemovePage("confirm"); w.app.SetFocus(focus) }
+	accept := func() { close(); run() }
+	buttons := tview.NewForm().
+		AddButton(w.iconLabel(iconApprove, "Approve & run"), accept).
+		AddButton(w.iconLabel(iconCancel, "Cancel"), close).
+		SetButtonsAlign(tview.AlignRight).
+		SetButtonStyle(tcell.StyleDefault.Foreground(tcell.GetColor(p.text)).Background(tcell.GetColor(p.background))).
+		SetButtonActivatedStyle(tcell.StyleDefault.Foreground(tcell.GetColor(p.background)).Background(tcell.GetColor(p.accent)).Bold(true))
+	buttons.SetBackgroundColor(surface).SetBorderPadding(0, 0, 1, 1)
 	panel := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(view, 0, 1, true).AddItem(buttons, 3, 0, false)
+	panel.SetBackgroundColor(surface).
+		SetBorder(true).
+		SetBorderColor(tcell.GetColor(p.accent)).
+		SetBorderAttributes(tcell.AttrBold).
+		SetTitleColor(tcell.GetColor(p.accent)).
+		SetTitle(" " + w.iconLabel(iconEye, "SYSTEMDOC · ACTION APPROVAL "))
 	panel.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		if e.Key() == tcell.KeyEscape {
 			close()
@@ -105,9 +132,14 @@ func (w *workspace) confirm(title, detail string, run func()) {
 			w.app.SetFocus(buttons)
 			return nil
 		}
+		if e.Rune() == 'y' || e.Rune() == 'Y' {
+			accept()
+			return nil
+		}
 		return e
 	})
-	w.pages.AddPage("confirm", panel, true, true)
+	w.pages.AddPage("confirm", centeredDialog(panel, 88, 20), true, true)
+	w.app.SetFocus(view)
 }
 
 func (w *workspace) execute(target, name string, args []string) {
