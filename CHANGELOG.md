@@ -4,6 +4,10 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.1.1 - 2026-09-14
+
 ### Fixes
 
 - Subprocess output is no longer merged with stderr, so a `WARNING:` line from docker or kubectl on a successful call cannot break JSON decoding of Compose projects, Kubernetes nodes or pods. Failures still report both streams.
