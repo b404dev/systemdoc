@@ -15,4 +15,4 @@ For a change:
 
 Keep backend calls off the UI thread. Clean and escape external output. Do not add a second terminal event loop, unbounded buffers, or speculative dependencies. Preserve native authorization and explicit-target action review.
 
-The repository license must be selected before public distribution; do not imply a license grant while release preparation is incomplete.
+Systemdoc is licensed under the [MIT License](LICENSE). By contributing you agree that your contributions are licensed under the same terms.

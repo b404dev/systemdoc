@@ -128,6 +128,10 @@ Try the optional [container playground](playground/README.md) for a small, real 
 
 ## Project status
 
-Systemdoc is preparing its first public release. macOS support is implemented and cross-built; live Mac verification remains a release requirement. Implemented features are described in the user guide; known limits and manual test gaps are recorded in [troubleshooting](docs/troubleshooting.md) and [the release guide](docs/releasing.md). Inventory uses CLI polling, and activity history is session-local. Resource totals describe reporting workloads, not whole-host usage.
+Systemdoc v0.1.0 is the first public release. macOS support is implemented and cross-built; live Mac verification remains a release requirement. Implemented features are described in the user guide; known limits and manual test gaps are recorded in [troubleshooting](docs/troubleshooting.md) and [the release guide](docs/releasing.md). Inventory uses CLI polling, and activity history is session-local. Resource totals describe reporting workloads, not whole-host usage.
 
 [Architecture](SPEC.md) · [Visual system](VISUAL-DESIGN.md) · [Changelog](CHANGELOG.md)
+
+## License
+
+Systemdoc is released under the [MIT License](LICENSE).

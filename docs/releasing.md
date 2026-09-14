@@ -7,7 +7,7 @@
 Before the first release:
 
 1. Confirm the public `owner/repository` and default branch. Replace `OWNER/systemdoc` in README, installation instructions, and `install.sh`; adjust raw URLs if the branch is not `main`.
-2. Choose a license, add its full text as `LICENSE`, and update README/contribution notes. Public visibility alone does not grant an open-source license.
+2. The repository is licensed under MIT (`LICENSE`); keep README and contribution notes consistent with it.
 3. Enable GitHub Actions and private vulnerability reporting. Confirm workflow token permissions allow the release job to create drafts.
 4. Run the checks below, commit the release content, and configure the Git remote. The documentation and installer are local preparation until pushed.
 
