@@ -537,7 +537,7 @@ func matchesNetworkSocket(s networkSocket, query string) bool {
 			}
 			continue
 		case "state":
-			if strings.ToLower(s.State) != strings.ToLower(socketState(value)) {
+			if !strings.EqualFold(s.State, socketState(value)) {
 				return false
 			}
 			continue

@@ -20,10 +20,10 @@ import (
 const podPrefix = "pod:"
 
 type kubeStack struct {
-	argv                 []string
-	distro, version      string
-	nodes, readyNodes    int
-	nodeName, kubeconfig string
+	argv              []string
+	distro, version   string
+	nodes, readyNodes int
+	nodeName          string
 }
 
 func (s kubeStack) label() string {

@@ -38,7 +38,9 @@ func TestApplicationDrawsFirstFrameAndQuits(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("application blocked before drawing its first frame")
 	}
-	screen.PostEventWait(tcell.NewEventKey(tcell.KeyRune, 'q', 0))
+	if err := screen.PostEvent(tcell.NewEventKey(tcell.KeyRune, 'q', 0)); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case err := <-done:
 		if err != nil {
