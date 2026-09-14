@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -300,21 +299,6 @@ func (w *workspace) traceResult(title, body string) {
 	})
 	w.pages.AddPage("trace-result", centered(view, 132, 42), true, true)
 	w.app.SetFocus(view)
-}
-
-func kernelRelease() string {
-	var utsname syscall.Utsname
-	if syscall.Uname(&utsname) != nil {
-		return ""
-	}
-	var release []byte
-	for _, c := range utsname.Release {
-		if c == 0 {
-			break
-		}
-		release = append(release, byte(c))
-	}
-	return string(release)
 }
 
 // sysdigForProcess opens the palette for the selected process, with the
