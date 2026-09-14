@@ -30,7 +30,12 @@ func command(ctx context.Context, name string, args ...string) (string, error) {
 
 // commandLimit runs a bounded command; limit 0 keeps the default 1 MiB tail.
 func commandLimit(ctx context.Context, limit int, name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	return runBounded(ctx, 8*time.Second, limit, name, args...)
+}
+
+// runBounded is the one place subprocess output and duration are capped.
+func runBounded(ctx context.Context, timeout time.Duration, limit int, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	buffer := tailBuffer{limit: limit}
 	cmd := exec.CommandContext(ctx, name, args...)
@@ -179,18 +184,11 @@ func enrichInventory(ctx context.Context, mode int, user bool, items []workload)
 				break
 			}
 		}
-		if !hasPods {
-			enrichDockerResources(ctx, items)
-			return items
-		}
-		// Docker stats and the Metrics API fill disjoint rows; sample them together.
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			enrichKubeResources(ctx, currentKubeStack(ctx), items)
-		}()
 		enrichDockerResources(ctx, items)
-		<-done
+		if hasPods {
+			// Sequential on purpose: both samplers walk the whole slice.
+			enrichKubeResources(ctx, currentKubeStack(ctx), items)
+		}
 		return items
 	}
 	if usesLaunchd() {

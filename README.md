@@ -6,6 +6,8 @@ Find a failing workload, follow its logs, inspect its configuration, and take ac
 
 ![Systemdoc's Cathedral dashboard with service inventory, telemetry, and inspector](docs/assets/dashboard.png)
 
+*Every image in this repository is captured from the real binary against live data with `scripts/capture-panels.sh`.*
+
 *Representative fixture rendered by the actual TUI. Workloads and measurements are illustrative.*
 
 ## Install
@@ -24,6 +26,10 @@ Prefer to inspect the script first, pin a version, install elsewhere, or build f
 
 ## Start here
 
+![Control Deck listing the five suites with live counts](docs/assets/control-deck.png)
+
+*`0` opens the Control Deck from any page: five suites, each with its live counts and a one-line description.*
+
 ```sh
 systemdoc                       # system services: systemd or launchd
 systemdoc --user                 # your user services
@@ -33,6 +39,10 @@ systemdoc --filter state:failed  # focus on failures
 
 ## Five feature suites
 
+![Containers suite showing a single-node k0s stack with a crash-looping pod selected](docs/assets/containers.png)
+
+*The Containers suite with a k0s stack: Docker containers and Kubernetes pods in one list, the Attention filter on, and a crash-looping pod's overview with its events.*
+
 Press `0` anywhere in the live workspace to open the **Control Deck**. It explains and opens the five numbered suites, so a first-time user can understand the product without memorising commands.
 
 | Suite | What it is for | Rich workflows |
@@ -40,7 +50,7 @@ Press `0` anywhere in the live workspace to open the **Control Deck**. It explai
 | **1 · Services** | Operate and troubleshoot native systemd or launchd workloads. | Live state and accounting, status, streaming/retained log search, source configuration, dependencies/runtime data, timers, activity, reviewed lifecycle actions, drafts and troubleshooting snapshots. |
 | **2 · Containers** | Understand individual Docker containers, the Compose projects behind them, and the pods of a single-node Kubernetes stack (k0s, k3s, kind, minikube, microk8s). | Health and resource telemetry, logs, inspect JSON, ports, mounts, networks, limits and labels; Compose discovery, validation, preview, build, pull and reviewed deployment actions; pod overview with events, Services, manifests, Metrics API readings, rollout restart and delete. |
 | **3 · Network** | Answer “what owns this port?” and inspect the host’s network surface. | TCP listeners, UDP bindings, active connections, interfaces, live download/upload speed, PID/process/user ownership, precise filters, process drill-down and private snapshot export. |
-| **4 · Processes** | Find resource-heavy or unhealthy processes, act on them, and trace where they belong. | CPU/RSS ranking, parent trees, full commands, user/state/PID filters, zombie detection, reviewed process signals, child/parent context, and direct jumps to associated services or ports. |
+| **4 · Processes** | Find resource-heavy or unhealthy processes, act on them, and trace where they belong. | CPU/RSS ranking, parent trees, full commands, user/state/PID filters, zombie detection, reviewed process signals, child/parent context, live per-process activity (threads, context switches, I/O, open files, journal), reviewed sysdig tracing of syscalls, files, connections and errors, and direct jumps to associated services or ports. |
 | **5 · Storage** | Spot capacity and inode pressure before it becomes an outage. | Mount usage and free-space sorting, inode accounting, shared-pool caveats, deleted files still held open, pressure highlighting, filtering and private evidence export. |
 
 The suites share one visual language, polling interval, keyboard model, theme system, and cross-links. Number keys switch instantly; the selected suite stays visibly highlighted.
@@ -75,6 +85,10 @@ The suites share one visual language, polling interval, keyboard model, theme sy
 
 [Full keymap and workflows →](docs/usage.md)
 
+![Process Activity digging into a running process: threads, switches, I/O, files and journal](docs/assets/process-activity.png)
+
+*Enter on a process opens Process Activity; `T` from there opens sysdig probes that stream inside the workspace.*
+
 ## Built for the dark
 
 Cathedral is the default. Reliquary, Nocturne, Crypt, and Blood Moon change the atmosphere while error, warning, and success colours stay consistent.
@@ -92,6 +106,7 @@ Press `t` to preview; Enter saves and Escape restores. JetBrainsMono Nerd Font i
 | Containers | Docker CLI and access to the chosen Docker daemon |
 | Compose projects | Docker Compose plugin (`docker compose`) |
 | Kubernetes pods | `kubectl` with a reachable context, or the embedded `k0s kubectl`, `k3s kubectl` or `microk8s kubectl`; metrics-server for CPU/memory (optional) |
+| Runtime tracing | `sysdig` with `sudo`, or Docker for the official `sysdig/sysdig` image (optional); the BPF probe needs kernel 5.8+, otherwise the `scap` module |
 | Remote sessions | OpenSSH client; a remote binary or `--upload` |
 | Optional AI help | An installed, separately authenticated Codex or Claude CLI |
 

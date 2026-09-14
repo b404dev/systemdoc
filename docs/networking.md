@@ -1,6 +1,6 @@
 # Ports and networking
 
-![Network Speed view with per-interface download and upload throughput](assets/network-speed.png)
+![Network Speed view with per-interface download and upload throughput on the host](assets/network-speed.png)
 
 *Illustrative counter samples rendered by the actual TUI; rates and interface names are fixtures.*
 

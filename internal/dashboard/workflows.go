@@ -186,36 +186,26 @@ func (w *workspace) actions() {
 					w.native("systemctl", args...)
 				}
 			})
-			add("Follow journal", "Open journalctl -f; Ctrl-C returns", func() {
-				args := []string{"-u", item.ID, "-f"}
-				if w.user {
-					args = append([]string{"--user"}, args...)
-				}
-				if item.ID != "" {
-					w.native("journalctl", args...)
-				}
-			})
+			add("Follow journal", "Stream the unit's journal live in the Logs tab", func() { w.selectTab(1) })
 		}
-	} else if isPod(item) {
+	}
+	if w.mode == 1 && item.ID != "" {
+		add("Trace with sysdig", "Syscalls, files, connections and errors of this workload · needs sudo", func() { w.sysdigForWorkload(item) })
+	}
+	if w.mode == 1 && isPod(item) {
 		namespace, name := podRef(item)
 		argv := kubeArgv()
 		add("Pod shell", "Open /bin/sh in the pod's default container with kubectl exec", func() {
 			w.native(argv[0], append(append([]string{}, argv[1:]...), "exec", "-it", "--namespace", namespace, name, "--", "/bin/sh")...)
 		})
-		add("Follow logs", "Open kubectl logs -f for every container; Ctrl-C returns", func() {
-			w.native(argv[0], append(append([]string{}, argv[1:]...), kubeLogArgs(item, true, "100")...)...)
-		})
-	} else {
+		add("Follow logs", "Stream every container's log live in the Logs tab", func() { w.selectTab(1) })
+	} else if w.mode == 1 {
 		add("Container shell", "Open /bin/sh in selected container", func() {
 			if item.ID != "" {
 				w.native("docker", "exec", "-it", item.ID, "/bin/sh")
 			}
 		})
-		add("Follow logs", "Open docker logs -f; Ctrl-C returns", func() {
-			if item.ID != "" {
-				w.native("docker", "logs", "--follow", "--tail", "100", item.ID)
-			}
-		})
+		add("Follow logs", "Stream the container's log live in the Logs tab", func() { w.selectTab(1) })
 	}
 	w.choose("actions", "Actions · "+w.current().Name, choices)
 }

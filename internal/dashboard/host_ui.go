@@ -88,6 +88,7 @@ type hostRow struct {
 	pid     int
 	warning bool
 }
+
 // A card shows either a one-row meter above a note, or a two-row trend chart.
 // Both fill the same three inner rows, so the row of cards keeps one height.
 type hostCard struct {
@@ -164,7 +165,7 @@ func (h *hostPage) currentView() int {
 // The selection band is named for what it actually shows, not "SELECTED".
 func (h *hostPage) bandTitle() string {
 	if h.tab == 3 {
-		return h.w.iconLabel(iconProcesses, "PROCESS VITALS · Enter full record")
+		return h.w.iconLabel(iconProcesses, "PROCESS VITALS · Enter live activity")
 	}
 	if h.deletedView {
 		return h.w.iconLabel(iconChanged, "OPEN HANDLE · Enter full record")
@@ -241,7 +242,11 @@ func (w *workspace) hostPage(tab int) {
 	for _, v := range []*tview.TextView{h.header, h.status, h.footer} {
 		v.SetBackgroundColor(tcell.GetColor(p.background))
 	}
-	h.detail.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetTitle(" SELECTED · Enter full details ").SetTitleColor(tcell.GetColor(p.accent)).SetBorderAttributes(tcell.AttrBold)
+	detailTitle := " SELECTED · Enter full details "
+	if h.tab == 3 {
+		detailTitle = " SELECTED · Enter live activity "
+	}
+	h.detail.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetTitle(detailTitle).SetTitleColor(tcell.GetColor(p.accent)).SetBorderAttributes(tcell.AttrBold)
 	h.table = tview.NewTable().SetSelectable(true, false).SetFixed(1, 0)
 	h.table.SetBackgroundColor(tcell.GetColor(p.background)).SetBorder(true).SetTitleColor(tcell.GetColor(p.accent)).SetBorderAttributes(tcell.AttrBold)
 	h.table.SetSelectedStyle(tcell.StyleDefault.Background(tcell.GetColor(p.accent)).Foreground(tcell.GetColor(p.background)).Bold(true))
@@ -406,6 +411,10 @@ func (h *hostPage) input(e *tcell.EventKey) *tcell.EventKey {
 	case 's':
 		if h.tab == 3 {
 			h.service()
+		}
+	case 'T':
+		if h.tab == 3 {
+			h.sysdigForProcess()
 		}
 	case 'e':
 		w.reviewSnapshot(h.report())
@@ -599,7 +608,16 @@ func (h *hostPage) current() *hostRow {
 	return nil
 }
 
+// Enter on a process opens live activity; storage rows keep the full record.
 func (h *hostPage) inspect() {
+	if h.tab == 3 {
+		h.openProcessActivity()
+		return
+	}
+	h.inspectRecord()
+}
+
+func (h *hostPage) inspectRecord() {
 	r := h.current()
 	if r == nil {
 		return
@@ -906,7 +924,7 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		if p.CPU >= 0 {
 			cpuText = fmt.Sprintf("%.1f%%", p.CPU)
 		}
-		detail := fmt.Sprintf("PID %d · %s · %s\nCPU %s · RSS %s · elapsed %s\nParent %d · %s\nChildren: %s\nCommand: %s\n\nK process actions · n ports · s service (current scope). Signals require review and PID identity validation.", p.PID, p.User, p.State, cpuText, hostBytes(p.RSS, true), p.Elapsed, p.PPID, available(parents[p.PPID]), available(strings.Join(children[p.PID], ", ")), p.Command)
+		detail := fmt.Sprintf("PID %d · %s · %s\nCPU %s · RSS %s · elapsed %s\nParent %d · %s\nChildren: %s\nCommand: %s\n\nEnter live activity (threads, switches, I/O, files, journal) · T sysdig runtime tracing · K process actions · n ports · s service (current scope). Signals require review and PID identity validation.", p.PID, p.User, p.State, cpuText, hostBytes(p.RSS, true), p.Elapsed, p.PPID, available(parents[p.PPID]), available(strings.Join(children[p.PID], ", ")), p.Command)
 		cpuCell := cpuText
 		if h.width >= 100 && p.CPU >= 0 {
 			cpuCell = cellGauge(cpuText, p.CPU, 100, 6, glyphs)
@@ -939,7 +957,7 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		mode = "PARENT TREE"
 	}
 	h.table.SetTitle(" PROCESSES · " + mode + " · F9/K signal · S sort ")
-	h.footer.SetText(" F9/K signals · / filter · S sort · f flat · t tree · n ports · s service · G graphics · r refresh · P pause · e export · Esc back")
+	h.footer.SetText(" Enter activity · F9/K signals · T sysdig · / filter · S sort · f flat · t tree · n ports · s service · G graphics · r refresh · P pause · e export · Esc back")
 	// The two resource cards plot the machine's own recent utilisation, which
 	// is a real series; the summed ps figures beside them are a snapshot and
 	// are named as such so the two are never read as the same measurement.

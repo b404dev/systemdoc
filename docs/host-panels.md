@@ -8,9 +8,9 @@ Each suite is lit by its own signature hue, taken from the theme's decorative ac
 
 At 100 columns or wider the CPU and usage columns carry an inline meter beside the figure, coloured by severity: green below 70%, amber from 70%, red from 85%. Meters follow the shared `G` block/braille/ASCII setting, which changes presentation only and never the measurement.
 
-![Process Explorer showing resource ranking and reviewed signal discovery](assets/processes.png)
+![Process Explorer ranking the host's processes by CPU with the selection band below](assets/processes.png)
 
-*Illustrative process fixture rendered by the actual TUI; `F9` or `K` opens the signal palette for the selected row.*
+*Captured from the real binary: the host's processes ranked by CPU, with Process Vitals for the selected row. `F9` or `K` opens the signal palette, Enter opens live activity.*
 
 ## Process Explorer
 
@@ -20,7 +20,39 @@ Press `G` to cycle the shared block, braille and ASCII signal style used by Proc
 
 The two resource cards plot the machine's own recent CPU and memory utilisation on a fixed 0-100% scale, beside the summed `ps` figures. The chart is a real series sampled independently of the process snapshot; the summed figures are a single snapshot, and the card names both so they are not read as one measurement. The selection band below the table shows the selected process's CPU and resident memory as gauges, with its state, elapsed time and parent.
 
-The process table shows full command lines, CPU estimate, resident memory (RSS), PID, user, state, parent PID and elapsed time. Narrow terminals keep the primary columns; Enter opens the complete record in a scrollable view.
+The process table shows full command lines, CPU estimate, resident memory (RSS), PID, user, state, parent PID and elapsed time. Narrow terminals keep the primary columns.
+
+**Enter digs into the selected process.** Process Activity samples that one PID from `/proc` every two seconds, independently of the slower table interval, and shows what the daemon is actually doing: its state in words (running, sleeping, waiting on disk or device, zombie), CPU split into user and system time with a trend, RSS and swap, page-fault rates, how often it yields (voluntary switches, meaning waits for I/O, locks or timers) versus how often it is preempted, storage and syscall I/O rates, open descriptors broken into sockets, files, pipes and other, deleted-but-open files, the owning service unit, executable, working directory and children. A thread table lists every thread busiest first with its own CPU share and state, so a single hot thread or a thread stuck in `D` state stands out. The newest journal lines carrying the PID follow. Rates need two samples, so the first frame says so rather than showing zero; when the process exits or the PID is reused the view says which and stops sampling.
+
+Another user's process exposes its threads, switches, memory, unit and journal but not its I/O counters or descriptors; those lines say so instead of reading zero. Inside the view, Space pauses, `r` samples now, `f` follows the process's journal live in a panel, `K` opens the signal palette, `n` jumps to its ports, `s` to its service, `T` opens sysdig tracing and `G` cycles the graphics. macOS has no `/proc`, so Enter shows the full record there.
+
+![Process Activity: state, CPU split, switches, I/O, open files, service, children, busiest threads and journal](assets/process-activity.png)
+
+*Process Activity for a terminal emulator owned by the current user, so every counter is readable: 39 threads with the renderer and I/O threads busiest, 42 descriptors including one deleted-but-open file, and the owning scope.*
+
+### Runtime tracing with sysdig
+
+`T` on a process, or **Trace with sysdig** in the Containers Actions menu, opens a palette of [sysdig](https://github.com/draios/sysdig) probes for that exact target: a process (`proc.pid`), the process and its children (`proc.apid`), a container (`container.id`) or a pod (`k8s.pod.name` and `k8s.ns.name`, which relies on the runtime labelling containers with their pod). sysdig sees what the binary actually does: every system call with its arguments and result, attributed to files, sockets and containers.
+
+| Probe | What it answers |
+| --- | --- |
+| Live syscalls · Descriptor I/O · stdout · stderr | Streams in the terminal until Ctrl-C |
+| Failed syscalls · 15 s | Which calls return errors, and which errno |
+| Top syscalls by count / by time · 15 s | What dominates the workload and where kernel time goes |
+| Slow syscalls · Slow file I/O over 1 ms · 15 s | Individual stalls |
+| Top files by bytes · File errors · 15 s | What it reads and writes, and what fails |
+| Top connections · 15 s | Network peers ranked by bytes |
+| Capture to file · 30 s | A compressed `.scap.gz` for offline `sudo sysdig -r` analysis |
+
+![sysdig probe palette over Process Activity](assets/sysdig-palette.png)
+
+*The probe palette for one PID. On this host the installed sysdig did not load, so every entry runs through the official container image without sudo.*
+
+![Live syscalls streaming inside the workspace](assets/sysdig-stream.png)
+
+*Live syscalls follow in a panel; Space pauses, `e` exports and Escape stops the capture cleanly.*
+
+Every probe is reviewed with the exact command before it runs, and nothing leaves the workspace. Systemdoc runs the installed sysdig through sudo when it loads; when sysdig is missing, or its libraries fail to load, and Docker is usable, it runs the official `sysdig/sysdig` image instead as a privileged container with the host's `/proc`, `/dev` and `/etc` and the BPF probe (no kernel module), pulling it once under a cancellable overlay. The container route needs no sudo (Docker group membership is already root-equivalent) and the review dialog shows the full `docker run …` command. `SYSTEMDOC_SYSDIG=native|container` forces the choice. sysdig needs root and a capture driver: on kernels 5.8 and newer Systemdoc uses the CO-RE BPF probe (`--modern-bpf`, no kernel module); older kernels use the `scap` module, and `SYSTEMDOC_SYSDIG_ENGINE=kmod|bpf|modern-bpf` overrides the choice. When sudo has no cached authorization, a masked field in the workspace asks for your password once and hands it to `sudo -S -v` on standard input; it is discarded immediately and never stored. Live probes stream into a panel: the last 500 lines follow as they arrive, scrolling up or Space pauses, `g` resumes following, `e` exports the retained buffer through the review flow, and Escape stops sysdig with the same interrupt Ctrl-C would send, so the capture ends cleanly and prints its summary. Timed probes collect in the background under a cancellable overlay while the dashboard stays live, then show the summary with `e` to export it. Tracing adds overhead to the traced workload while it runs; captures include data buffers and can contain secrets, and the capture file is created by root in the current directory. When sysdig is missing, the message names the package command for your distribution.
 
 - `S` cycles CPU, memory and PID sorting.
 - `f` shows the flat list and `t` the parent-child tree; `t` still toggles between them. Filtering keeps matching rows; a process whose parent is filtered out becomes a displayed root.
@@ -32,6 +64,8 @@ The process table shows full command lines, CPU estimate, resident memory (RSS),
 The collector uses `ps` on Linux and Apple Silicon macOS. CPU is the operating system's `ps` estimate, not an interval-based profiler; it can exceed 100% for multiple cores. Summed RSS can count shared memory more than once. Missing metrics show a dash. Parent relationships and PID ownership can change between the process sample and subsequent inspection.
 
 ## Disk & Storage
+
+![Disk & Storage listing mounts with usage meters and the capacity band for the selected filesystem](assets/storage.png)
 
 The selection band shows the selected filesystem's space and inode usage as full-width gauges with used, free and total figures. Filesystems that do not report inode counts say so rather than drawing an empty gauge.
 

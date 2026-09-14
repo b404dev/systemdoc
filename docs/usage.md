@@ -2,9 +2,9 @@
 
 [Documentation index](README.md) · [Install](installation.md)
 
-![Docker overview showing container identity, ports, and mounts](assets/docker.png)
+![Containers suite with a k0s stack: crash-looping pod overview beside the merged container and pod list](assets/containers.png)
 
-*Illustrative container fixture rendered by the actual TUI; scroll or expand for all fields.*
+*Captured from the real binary against the k0s playground: the masthead names the stack, the Attention filter isolates the failing pods, and the overview shows the crash loop, the last exit and the newest events.*
 
 ## The five feature suites
 
@@ -32,7 +32,15 @@ Services use systemd on Linux and launchd on macOS. See [macOS services](macos.m
 
 Pod state uses the same vocabulary as containers so the Active and Attention cards mean one thing: **running** when the pod runs (a running pod with a container that is not ready says so and counts as attention), **pending** with the blocking reason (`ContainerCreating`, `Unschedulable`), **restarting** for `CrashLoopBackOff`, **failed** for image and configuration errors, **succeeded** for completed Jobs and **terminating** while a pod is being removed. CPU and memory come from the Metrics API (`kubectl top`) and stay blank without metrics-server; CPU is shown as a share of one logical CPU like everywhere else.
 
-The Overview tab shows the pod's phase, owner (the Deployment is recovered from its ReplicaSet), node, QoS class, each container's image, state, last exit, restarts, requests, limits, probes and ports, init containers, volumes with their mounts and access mode, conditions, the newest events (a warning such as `BackOff` sits at the top) and labels. Environment values and annotation contents stay in the full manifest (`c`, YAML). `d` opens Connections with pod and host addresses, container ports and the Services whose selectors match the pod's labels, including cluster IP, node ports and load-balancer addresses. `l` streams every container's log with a container prefix and `r` reads the Metrics API per container. Actions offer **restart** as a controller rollout for Deployment, StatefulSet and DaemonSet pods, **delete** for any pod, a pod shell and native log follow. Compose project menus and Docker actions are unchanged for containers.
+The Overview tab shows the pod's phase, owner (the Deployment is recovered from its ReplicaSet), node, QoS class, each container's image, state, last exit, restarts, requests, limits, probes and ports, init containers, volumes with their mounts and access mode, conditions, the newest events (a warning such as `BackOff` sits at the top) and labels. Environment values and annotation contents stay in the full manifest (`c`, YAML). `d` opens Connections with pod and host addresses, container ports and the Services whose selectors match the pod's labels, including cluster IP, node ports and load-balancer addresses. `l` streams every container's log with a container prefix and `r` reads the Metrics API per container. Actions offer **restart** as a controller rollout for Deployment, StatefulSet and DaemonSet pods, **delete** for any pod, a pod shell, native log follow and **Trace with sysdig**, which is also offered for containers; see [runtime tracing](host-panels.md#runtime-tracing-with-sysdig). Compose project menus and Docker actions are unchanged for containers.
+
+![Docker overview of the k0s node container: image, state, ports, mounts, networks and runtime settings](assets/docker.png)
+
+*A Docker container in the same list: the overview projects `docker inspect` into identity, ports, mounts, networks, runtime and labels.*
+
+![Pod Connections: addresses, container ports, matching Services and volumes](assets/pod-connections.png)
+
+*`d` on a pod shows how traffic reaches it: addresses, declared ports, the Services whose selectors match and the volumes it mounts.*
 
 Detection is automatic; `--kubectl "k0s kubectl"` or `SYSTEMDOC_KUBECTL` pins an exact invocation (for example `kubectl --context kind-dev`). k0s, k3s and microk8s keep their admin kubeconfig root-only, so run Systemdoc with the permissions you would use for `kubectl` itself; it never elevates. A stack that stops answering is dropped and probed again with back-off, and the masthead says `kubernetes unreachable` while a kubectl is installed but no cluster answers. Without Docker, the suite still shows the pods and the masthead says `docker unavailable`.
 
@@ -53,7 +61,7 @@ The list uses a dark continuous surface, semantic state colours, and a gradient 
 
 Press `x` for **System Constellation**, an on-demand relationship map for the selected workload. Services show state, process, resources and reported systemd dependencies; containers show identity, project, image, ports, mounts and networks from the existing Connections collector. The map does not add background polling. Press `G` to cycle **blocks**, **braille**, and **ASCII** signal graphics; the choice is saved and applies to dashboards, Network Speed, Process Explorer, Storage and resource history. The footer shows the active polling interval; click it or press `,` from any live page to set 2–300 seconds. A small muted spinner appears only while the current backend refreshes.
 
-![System Constellation mapping a selected service to its process and dependencies](assets/constellation.png)
+![System Constellation mapping containerd.service to its systemd relationships](assets/constellation.png)
 
 *Illustrative relationship fixture rendered by the actual TUI.*
 
@@ -144,7 +152,7 @@ Press **Shift+R**, or choose restart from the visible **Actions** menu, to resta
 
 Open Actions for service start/stop/restart/reload, enable/disable, mask/unmask, and reset-failed. Docker actions include start/stop/restart, pause/unpause, and removal. Kubernetes pods offer restart (a `kubectl rollout restart` of the owning Deployment, StatefulSet or DaemonSet) and delete; a bare pod cannot be restarted and the review says so. Every lifecycle action currently presents an exact-target review. Operation history distinguishes command completion from actual workload health and retains bounded output.
 
-For terminal authorization on system services, choose **System service authorization**. Native editing and shell workflows suspend the interface and restore it when the tool exits. A container shell defaults to `/bin/sh`.
+For terminal authorization on system services, choose **System service authorization**. Only editors and shells suspend the interface and restore it when the tool exits; a container or pod shell defaults to `/bin/sh`. Following journals and logs never leaves the workspace: the Actions entries open the live Logs tab, Process Activity streams a PID's journal in a panel, and sysdig streams in a panel.
 
 **New service draft** opens an editable template with user/system scope. Validation uses `systemd-analyze verify`; installation never replaces an existing unit. User installation uses an atomic new-file operation. System installation uses terminal `sudo`, a private staging file, and a non-clobbering copy followed by destination verification. Installation reloads the chosen manager but does not enable/start the service. Existing units can be changed through native `systemctl edit`.
 
