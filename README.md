@@ -15,7 +15,7 @@ Find a failing workload, follow its logs, inspect its configuration, and take ac
 Linux **x86_64/arm64** and macOS **Apple Silicon (arm64)**. No Go installation or sudo required.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/systemdoc/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/b404dev/systemdoc/main/install.sh | sh
 ```
 
 The installer downloads the latest published release, verifies its SHA-256 checksum, and installs `~/.local/bin/systemdoc`. Add that directory to your `PATH` if needed. Run the same command to update.

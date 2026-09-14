@@ -13,7 +13,7 @@ Use JetBrainsMono Nerd Font or another current Nerd Font for the intended icon g
 ## One-line installation and updates
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/systemdoc/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/b404dev/systemdoc/main/install.sh | sh
 ```
 
 This URL becomes available when the public repository is configured and its first release is published. The installer resolves the latest release once, downloads the matching binary and `SHA256SUMS` from that tag, verifies the checksum, then replaces `~/.local/bin/systemdoc` atomically. Download or checksum failures leave the existing binary untouched. It never invokes sudo or edits shell settings.
@@ -29,7 +29,7 @@ Start a new shell, then run `systemdoc --version`.
 ## Download and inspect the installer first
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/systemdoc/main/install.sh -o install-systemdoc.sh
+curl -fsSL https://raw.githubusercontent.com/b404dev/systemdoc/main/install.sh -o install-systemdoc.sh
 less install-systemdoc.sh
 sh install-systemdoc.sh
 ```
@@ -39,8 +39,8 @@ sh install-systemdoc.sh
 Replace the example version with a published tag:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/systemdoc/main/install.sh | SYSTEMDOC_VERSION=v0.1.0 sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/systemdoc/main/install.sh | SYSTEMDOC_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://raw.githubusercontent.com/b404dev/systemdoc/main/install.sh | SYSTEMDOC_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/b404dev/systemdoc/main/install.sh | SYSTEMDOC_INSTALL_DIR="$HOME/bin" sh
 ```
 
 The install directory must be an absolute path writable by your user. `SYSTEMDOC_REPO=owner/repository` selects a fork with the same release asset layout. The checksum validates the binary against the release manifest; it is not an independent signature of the publisher.
@@ -59,7 +59,7 @@ systemdoc --version
 Go 1.23 or newer, Git, and Make are needed for this route:
 
 ```sh
-git clone https://github.com/OWNER/systemdoc.git
+git clone https://github.com/b404dev/systemdoc.git
 cd systemdoc
 make build
 ./bin/systemdoc

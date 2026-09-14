@@ -4,7 +4,7 @@
 set -eu
 
 main() {
-    repo=${SYSTEMDOC_REPO:-OWNER/systemdoc}
+    repo=${SYSTEMDOC_REPO:-b404dev/systemdoc}
     version=${SYSTEMDOC_VERSION:-latest}
     install_dir=${SYSTEMDOC_INSTALL_DIR:-"$HOME/.local/bin"}
     fail() { printf 'systemdoc: %s\n' "$*" >&2; exit 1; }

@@ -4,6 +4,12 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.1.0 - 2026-09-14
+
+First public release.
+
 ### Added
 
 - Documentation images are now captured from the real binary against live data. `scripts/capture-panels.sh` drives `bin/systemdoc` in a detached 24-bit-colour tmux server, walks every panel, and renders PNGs through `scripts/ansi-to-cells.py` and the existing SVG path; the k0s playground gained DaemonSet, StatefulSet-with-unbound-claim, OOM-killed, unschedulable and flapping-liveness workloads so the captures show every state the suite distinguishes.
