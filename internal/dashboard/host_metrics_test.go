@@ -8,8 +8,9 @@ import (
 )
 
 func TestParseProcStatSplitsBusyFromIdle(t *testing.T) {
-	// user nice system idle iowait irq softirq steal
-	sample := parseProcStat("cpu  100 20 30 700 50 5 5 10\ncpu0 10 2 3 70 5 0 0 1\nintr 12345\n")
+	// user nice system idle iowait irq softirq steal guest guest_nice; guest
+	// columns are already inside user/nice and must not change the totals.
+	sample := parseProcStat("cpu  100 20 30 700 50 5 5 10 90 15\ncpu0 10 2 3 70 5 0 0 1 9 1\nintr 12345\n")
 	if !sample.ok {
 		t.Fatal("expected the aggregate cpu line to parse")
 	}

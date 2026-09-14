@@ -27,7 +27,9 @@ type cpuTimes struct {
 }
 
 // parseProcStat reads the aggregate "cpu" line of /proc/stat. Idle and iowait
-// are both non-busy time; every other column counts as busy.
+// are both non-busy time; every other column counts as busy. The guest and
+// guest_nice columns are already included in user and nice by the kernel, so
+// they are skipped rather than counted twice.
 func parseProcStat(raw string) cpuTimes {
 	for _, line := range strings.Split(raw, "\n") {
 		fields := strings.Fields(line)
@@ -39,6 +41,9 @@ func parseProcStat(raw string) cpuTimes {
 			value, err := strconv.ParseUint(field, 10, 64)
 			if err != nil {
 				return cpuTimes{}
+			}
+			if i >= 8 {
+				break
 			}
 			total += value
 			if i == 3 || i == 4 {

@@ -203,6 +203,19 @@ func (w *workspace) chooseSort() {
 	w.choose("sort", " Sort workloads ", choices)
 }
 
+// enterMode records a mode change made by the command palette or another
+// route that bypasses switchMode. It recomputes the loading flag from the
+// new mode's own job and schedules inventory when none is due, so a job
+// still running for the previous mode cannot leave the new one marked as
+// loading with the refresh loop silently paused.
+func (w *workspace) enterMode(mode int) {
+	w.mode = mode
+	w.loading = w.inventoryJobs[mode] != nil && w.lastRefresh[mode].IsZero()
+	if w.lastRefresh[mode].IsZero() || time.Since(w.lastRefresh[mode]) >= time.Duration(w.settings.RefreshSeconds)*time.Second {
+		w.startInventory(mode)
+	}
+}
+
 func (w *workspace) switchMode(mode int) {
 	if mode == w.mode {
 		w.app.SetFocus(w.table)

@@ -203,20 +203,25 @@ func (w *workspace) streamPanel(title, commandLine, name string, build func(cont
 	w.pages.AddPage("stream-panel", centered(view, 140, 42), true, true)
 	w.app.SetFocus(view)
 	style := &w.drawerLogStyle
-	go streamCommand(ctx, build(ctx), name, func(text, ending string) {
-		next := prepareLogSnapshot(text, ending, *style.Load())
-		count := strings.Count(text, "\n")
-		if ctx.Err() != nil {
-			return
-		}
-		w.queue(func() {
+	cmd := build(ctx)
+	w.background.Add(1)
+	go func() {
+		defer w.background.Done()
+		streamCommand(ctx, cmd, name, func(text, ending string) {
+			next := prepareLogSnapshot(text, ending, *style.Load())
+			count := strings.Count(text, "\n")
 			if ctx.Err() != nil {
 				return
 			}
-			snapshot, lines = next, count
-			render()
+			w.queue(func() {
+				if ctx.Err() != nil {
+					return
+				}
+				snapshot, lines = next, count
+				render()
+			})
 		})
-	})
+	}()
 }
 
 // followJournalPanel streams journalctl for one PID inside the workspace.
@@ -247,7 +252,9 @@ func (w *workspace) runSysdigCollection(runner sysdigRunner, probe sysdigProbe, 
 	})
 	w.pages.AddPage("sysdig-loading", centered(loading, 100, 7), true, true)
 	started := time.Now()
+	w.background.Add(1)
 	go func() {
+		defer w.background.Done()
 		output, err := collectSysdig(ctx, runner, probe, args)
 		if ctx.Err() != nil {
 			return

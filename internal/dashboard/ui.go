@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +37,7 @@ type workspace struct {
 	logHistoryGeneration            int
 	ctx                             context.Context
 	detailCancel                    context.CancelFunc
+	background                      sync.WaitGroup
 	settings                        settings
 	configError                     error
 	operations                      []*operation
@@ -142,7 +144,22 @@ func Run(options Options) error {
 			}()
 		}
 	})
-	return w.app.Run()
+	err := w.app.Run()
+	cancel()
+	w.awaitBackground(5 * time.Second)
+	return err
+}
+
+// awaitBackground gives cancelled streams and collections a moment to stop
+// their processes before the program exits, so quitting mid-probe does not
+// leave a privileged sysdig container running.
+func (w *workspace) awaitBackground(limit time.Duration) {
+	done := make(chan struct{})
+	go func() { w.background.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(limit):
+	}
 }
 
 func textView() *tview.TextView { return tview.NewTextView().SetDynamicColors(false) }

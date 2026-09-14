@@ -215,14 +215,18 @@ func TestLaunchdPlatformRouting(t *testing.T) {
 }
 
 func TestLaunchDisabledUnknownAndPIDChanges(t *testing.T) {
-	for _, raw := range []string{"", "permission denied", "disabled services = {\n", "disabled services = {\n \"job\" => unexpected\n}"} {
+	for _, raw := range []string{"", "permission denied", "disabled services = {\n", "disabled services = {\n job\n}"} {
 		if _, err := parseLaunchDisabled(raw); err == nil {
 			t.Fatal("unknown override became default", raw)
 		}
 	}
-	got, err := parseLaunchDisabled("disabled services = {\n \"job\" => false\n}")
-	if err != nil || got["job"] != "enabled" {
+	got, err := parseLaunchDisabled("disabled services = {\n \"job\" => false\n \"odd\" => unexpected\n}")
+	if err != nil || got["job"] != "enabled" || got["odd"] != "" {
 		t.Fatal(got, err)
+	}
+	got, err = parseLaunchDisabled("disabled services = {\n \"a\" => disabled\n \"b\" => enabled\n}")
+	if err != nil || got["a"] != "disabled" || got["b"] != "enabled" {
+		t.Fatal("newer launchctl spelling not accepted", got, err)
 	}
 	rows := carryAccounting([]workload{{ID: "job", State: "active", PID: 1, CPU: "99%", Memory: "10 MiB"}}, []workload{{ID: "job", State: "active", PID: 2}})
 	if rows[0].CPU != "" || rows[0].Memory != "" {

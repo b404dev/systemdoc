@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -57,6 +58,11 @@ func followLogs(ctx context.Context, mode int, user bool, item workload, update 
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = &output
 	cmd.Stderr = &output
+	// Interrupt rather than kill so a wrapper such as `sudo k0s kubectl` relays
+	// the stop to the real follower, and bound Wait so a child that keeps the
+	// pipe open cannot pin this goroutine and its process for the session.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 2 * time.Second
 	done := make(chan error, 1)
 	go func() { done <- cmd.Run() }()
 	ticker := time.NewTicker(400 * time.Millisecond)
@@ -66,6 +72,7 @@ func followLogs(ctx context.Context, mode int, user bool, item workload, update 
 	for {
 		select {
 		case <-ctx.Done():
+			<-done
 			return
 		case err := <-done:
 			message := "\n[Log stream ended]"

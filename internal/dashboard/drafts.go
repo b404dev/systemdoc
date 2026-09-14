@@ -104,6 +104,7 @@ func (w *workspace) validateDraft(name, content string, user bool) {
 				w.pages.RemovePage("draft")
 				w.user = true
 				w.mode = 0
+				w.load()
 				w.chrome()
 				w.execute(name, "systemctl", []string{"--user", "daemon-reload"})
 			})
@@ -146,6 +147,7 @@ func (w *workspace) installSystemDraft(name, target, content string) {
 	w.pages.RemovePage("draft")
 	w.user = false
 	w.mode = 0
+	w.load()
 	w.chrome()
 	if err = w.native("sudo", "--", "systemctl", "daemon-reload"); err != nil {
 		w.message("Installed, reload failed", "The unit file exists; retry daemon-reload before starting it.")
