@@ -28,6 +28,8 @@ systemdoc --ssh server --ssh-user alice --setup-ssh-key --identity /home/alice/.
 
 For subsequent CLI sessions, pass the same `--identity` path (the GUI remembers it). Key setup can ask for the remote account password and a local key passphrase; these are distinct authentication steps.
 
+The remote command inherits your local terminal's colour capability: when the local terminal is 24-bit, Systemdoc sets `COLORTERM=truecolor` for the remote process, because sshd forwards `TERM` but not `COLORTERM` and the interface would otherwise render its gradients in 256-colour blocks. See [troubleshooting](troubleshooting.md#the-layout-or-colours-look-wrong) for manual SSH sessions and tmux.
+
 Each remote session uses a private [OpenSSH control connection](https://man.openbsd.org/ssh_config#ControlMaster). Host checks, uploads, execution and cleanup reuse that authenticated connection, avoiding a fresh password prompt for each command. Systemdoc closes its own control connection on exit, with a 60-second idle fallback, and leaves your SSH configuration unchanged.
 
 To upload a temporary executable for this session:

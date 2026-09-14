@@ -36,6 +36,13 @@ A dash means unavailable, not zero. Systemd accounting must expose the correspon
 
 ## The layout or colours look wrong
 
+**Gradients look blocky or banded, usually over SSH.** The terminal on the far side is being treated as 256 colours, so every smooth blend snaps to the nearest palette entry. sshd forwards `TERM` but not `COLORTERM`, and tmux and screen hide the outer terminal's capability. Systemdoc detects this, draws flat tints instead of gradients, and shows `256 colours` in the status line so you know why. To get 24-bit colour back:
+
+- `systemdoc --ssh host` forwards your local terminal's capability automatically.
+- For a manual SSH session, run `export COLORTERM=truecolor` on the remote shell, or add it to the remote `~/.bashrc`. `TCELL_TRUECOLOR=1 systemdoc` forces it for one run.
+- Inside tmux, add `set -as terminal-features ',xterm-256color:RGB'` (tmux 3.2+) or `set -ga terminal-overrides ',xterm-256color:Tc'` to `~/.tmux.conf`.
+- If the remote lacks terminfo for your terminal (Ghostty and Kitty on older Ubuntu, for example) and you have set `TERM=xterm-256color` to work around it, `COLORTERM=truecolor` restores full colour.
+
 Start with a true-color terminal, JetBrainsMono Nerd Font, and Cathedral (`t`). Clear accent/background overrides under Preferences. Legacy Deep theme names migrate to the nearest Observatory palette. If icons appear as boxes, either configure the patched font in the terminal displaying Systemdoc—including the local terminal for SSH—or disable the Nerd Font interface under Preferences for labeled fallbacks.
 
 At 110 columns or more, automatic layout shows list and inspector side by side. Compact terminals show the focused pane; Enter/Tab reaches the inspector. `z` expands, Escape restores. `L` opens the independent log drawer. Resize for more telemetry and content.

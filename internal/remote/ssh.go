@@ -163,7 +163,7 @@ func Run(o Options) error {
 			return err
 		}
 	}
-	words := []string{shellQuote(o.Binary)}
+	words := append(remoteEnvironment(os.Getenv("COLORTERM"), os.Getenv("TERM")), shellQuote(o.Binary))
 	for _, arg := range o.Args {
 		words = append(words, shellQuote(arg))
 	}
@@ -175,6 +175,27 @@ func Run(o Options) error {
 		return fmt.Errorf("SSH session ended: %w (install Systemdoc remotely, specify --remote-bin, or use --upload)", err)
 	}
 	return nil
+}
+
+// remoteEnvironment carries the local terminal's colour capability to the
+// remote command. sshd forwards TERM but not COLORTERM, so without this a
+// 24-bit terminal is treated as 256 colours on the far side and every
+// gradient is quantised into visible blocks.
+func remoteEnvironment(colorterm, term string) []string {
+	truecolor := false
+	switch colorterm {
+	case "truecolor", "24bit", "24-bit":
+		truecolor = true
+	}
+	for _, marker := range []string{"ghostty", "kitty", "truecolor", "direct", "alacritty", "wezterm", "foot"} {
+		if strings.Contains(term, marker) {
+			truecolor = true
+		}
+	}
+	if !truecolor {
+		return nil
+	}
+	return []string{"env", "COLORTERM=truecolor"}
 }
 
 func checkBinary(path, platform string) error {

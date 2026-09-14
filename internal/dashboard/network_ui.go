@@ -84,7 +84,7 @@ func (n *networkPage) Draw(screen tcell.Screen) {
 	for i, card := range n.cards {
 		rails[card.Box] = []string{p.success, p.accent, p.warning}[i]
 	}
-	paintSurfaces(screen, n.Flex, p, n.header, n.table, rails)
+	paintSurfaces(screen, n.Flex, p, n.header, n.table, rails, n.w.limitedColours)
 }
 
 func (w *workspace) networkPage() {

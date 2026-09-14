@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 // A tool that warns on stderr while succeeding must not corrupt the output
@@ -57,5 +59,24 @@ func TestLogSearchTimeBoundsSeePodPrefixedStamps(t *testing.T) {
 	}
 	if _, err := parseLogTime("2026-09-14 10:00:00.123456+0100"); err != nil {
 		t.Fatalf("launchd log stamp rejected: %v", err)
+	}
+}
+
+// A 256-colour terminal takes the flat paint path and says so in the status.
+func TestLimitedColourTerminalDrawsFlatAndSaysSo(t *testing.T) {
+	w := testWorkspace()
+	w.colourDepthKnown = false
+	screen := tcell.NewSimulationScreen("UTF-8")
+	w.app.SetScreen(screen)
+	defer screen.Fini()
+	screen.SetSize(160, 44)
+	w.app.ForceDraw()
+	if !w.limitedColours {
+		t.Fatal("simulation screen reports 256 colours; limitedColours should be set")
+	}
+	w.updateDashboard()
+	w.app.ForceDraw()
+	if !strings.Contains(w.summary.GetText(true), "256 colours") {
+		t.Fatalf("status should mention the colour limit: %q", w.summary.GetText(true))
 	}
 }

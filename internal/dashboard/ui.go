@@ -38,53 +38,57 @@ type workspace struct {
 	ctx                             context.Context
 	detailCancel                    context.CancelFunc
 	background                      sync.WaitGroup
-	settings                        settings
-	configError                     error
-	operations                      []*operation
-	operationCancel                 context.CancelFunc
-	projects                        []project
-	loading                         bool
-	refreshDetail                   bool
-	lastWidth, lastHeight           int
-	layoutDetail                    bool
-	logDrawer                       *tview.TextView
-	inspectorLog, drawerLog         logSnapshot
-	inspectorLogStyle               atomic.Pointer[logStyle]
-	drawerLogStyle                  atomic.Pointer[logStyle]
-	drawerOpen, drawerPaused        bool
-	drawerKey                       string
-	drawerCancel                    context.CancelFunc
-	drawerGeneration                int
-	commandBar, tabBar, telemetry   *tview.Flex
-	selectionCard                   *tview.TextView
-	loadingIndicator                *tview.TextView
-	pollButton                      *tview.Button
-	splashView                      *tview.TextView
-	footerBar                       *tview.Flex
-	loadingAnimation                atomic.Bool
-	cards                           [4]*tview.TextView
-	modeButtons                     [2]*tview.Button
-	tabButtons                      [5]*tview.Button
-	toolbarButtons                  []*tview.Button
-	workspaceButtons                []*tview.Button
-	quickFilter, sortMode, zoom     int
-	fleetHistory                    [2][]fleetSample
-	hostUsage                       hostUtilisation
-	hostCPUHistory                  []float64
-	hostMemoryHistory               []float64
-	lastRefresh                     [2]time.Time
-	backendError                    [2]bool
-	body                            *tview.Flex
-	inspector                       *tview.Flex
-	favoriteOnly                    bool
-	logPaused                       bool
-	logQuery                        string
-	paused                          bool
-	metrics                         map[string][]metricSample
-	activity                        []activityEvent
-	commandHistory                  []string
-	workloadHistory                 map[string][]workloadSignal
-	hostLabel                       string
+	// limitedColours is set on the first frame when the terminal cannot show
+	// 24-bit colour. Gradients are then drawn as flat tints, because a 256
+	// colour palette turns every smooth blend into visible blocks.
+	limitedColours, colourDepthKnown bool
+	settings                         settings
+	configError                      error
+	operations                       []*operation
+	operationCancel                  context.CancelFunc
+	projects                         []project
+	loading                          bool
+	refreshDetail                    bool
+	lastWidth, lastHeight            int
+	layoutDetail                     bool
+	logDrawer                        *tview.TextView
+	inspectorLog, drawerLog          logSnapshot
+	inspectorLogStyle                atomic.Pointer[logStyle]
+	drawerLogStyle                   atomic.Pointer[logStyle]
+	drawerOpen, drawerPaused         bool
+	drawerKey                        string
+	drawerCancel                     context.CancelFunc
+	drawerGeneration                 int
+	commandBar, tabBar, telemetry    *tview.Flex
+	selectionCard                    *tview.TextView
+	loadingIndicator                 *tview.TextView
+	pollButton                       *tview.Button
+	splashView                       *tview.TextView
+	footerBar                        *tview.Flex
+	loadingAnimation                 atomic.Bool
+	cards                            [4]*tview.TextView
+	modeButtons                      [2]*tview.Button
+	tabButtons                       [5]*tview.Button
+	toolbarButtons                   []*tview.Button
+	workspaceButtons                 []*tview.Button
+	quickFilter, sortMode, zoom      int
+	fleetHistory                     [2][]fleetSample
+	hostUsage                        hostUtilisation
+	hostCPUHistory                   []float64
+	hostMemoryHistory                []float64
+	lastRefresh                      [2]time.Time
+	backendError                     [2]bool
+	body                             *tview.Flex
+	inspector                        *tview.Flex
+	favoriteOnly                     bool
+	logPaused                        bool
+	logQuery                         string
+	paused                           bool
+	metrics                          map[string][]metricSample
+	activity                         []activityEvent
+	commandHistory                   []string
+	workloadHistory                  map[string][]workloadSignal
+	hostLabel                        string
 }
 
 type Options struct {
@@ -184,6 +188,10 @@ func newWorkspace(ctx context.Context, user bool) *workspace {
 	w.table.SetSelectedFunc(func(int, int) { w.app.SetFocus(w.detail) })
 	w.buildDashboard()
 	w.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+		if !w.colourDepthKnown {
+			w.colourDepthKnown = true
+			w.limitedColours = screen.Colors() < 1<<24
+		}
 		p := w.palette()
 		border, focus := tcell.GetColor(p.accent), tcell.GetColor(p.text)
 		w.table.SetBorderColor(border)

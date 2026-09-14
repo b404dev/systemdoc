@@ -217,7 +217,7 @@ func (h *hostPage) Draw(screen tcell.Screen) {
 	for i, card := range h.cards {
 		rails[card.Box] = []string{p.accent, p.warning, p.success}[i]
 	}
-	paintSurfaces(screen, h.Flex, p, h.header, h.table, rails)
+	paintSurfaces(screen, h.Flex, p, h.header, h.table, rails, h.w.limitedColours)
 }
 
 func (w *workspace) hostPage(tab int) {

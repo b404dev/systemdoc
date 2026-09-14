@@ -55,6 +55,9 @@ func testWorkspace() *workspace {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	w := newWorkspace(ctx, false)
+	// The simulation screen reports 256 colours; keep the 24-bit paint path
+	// under test and benchmark, since that is what real terminals run.
+	w.colourDepthKnown = true
 	w.items[0] = []workload{{ID: "nginx.service", Name: "nginx.service", State: "active"}, {ID: "worker.service", Name: "worker.service", State: "failed"}}
 	w.renderTable()
 	return w

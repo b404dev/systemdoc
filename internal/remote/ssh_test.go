@@ -72,3 +72,15 @@ func TestExplicitSSHUsername(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteEnvironmentForwardsTruecolor(t *testing.T) {
+	if got := remoteEnvironment("truecolor", "xterm-256color"); len(got) != 2 || got[1] != "COLORTERM=truecolor" {
+		t.Fatalf("COLORTERM=truecolor not forwarded: %v", got)
+	}
+	if got := remoteEnvironment("", "xterm-ghostty"); len(got) != 2 {
+		t.Fatalf("known 24-bit terminal not forwarded: %v", got)
+	}
+	if got := remoteEnvironment("", "xterm-256color"); got != nil {
+		t.Fatalf("256-colour terminal must not claim truecolor: %v", got)
+	}
+}

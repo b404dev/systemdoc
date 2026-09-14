@@ -117,11 +117,14 @@ func (d *luminousDashboard) Draw(screen tcell.Screen) {
 		// carry severity in the headline instead.
 		rails[card.Box] = []string{p.success, p.error, p.accent, p.glow}[i]
 	}
-	paintSurfaces(screen, d.Flex, p, d.w.header, d.w.table, rails)
+	paintSurfaces(screen, d.Flex, p, d.w.header, d.w.table, rails, d.w.limitedColours)
 }
 
-// Both primary pages use the same post-draw surface treatment.
-func paintSurfaces(screen tcell.Screen, root *tview.Flex, p palette, header *tview.TextView, table *tview.Table, rails map[*tview.Box]string) {
+// Both primary pages use the same post-draw surface treatment. With flat set
+// every panel takes one tint and the header one hue, because a terminal
+// without 24-bit colour would otherwise snap each blend step to a different
+// palette entry and draw the gradient as blocks.
+func paintSurfaces(screen tcell.Screen, root *tview.Flex, p palette, header *tview.TextView, table *tview.Table, rails map[*tview.Box]string, flat bool) {
 	var visit func(tview.Primitive)
 	visit = func(primitive tview.Primitive) {
 		_, _, width, height := primitive.GetRect()
@@ -173,6 +176,9 @@ func paintSurfaces(screen tcell.Screen, root *tview.Flex, p palette, header *tvi
 				_, bg, _ := style.Decompose()
 				if primitive == table && bg == accent {
 					position := float64(col-x-1) / float64(max(1, width-3))
+					if flat {
+						position = 0.5
+					}
 					selection := blend(accent, glow, 0.55*max(0, min(1, position)))
 					if col == x+1 {
 						r, combining = '▸', nil
@@ -185,8 +191,14 @@ func paintSurfaces(screen tcell.Screen, root *tview.Flex, p palette, header *tvi
 					continue
 				}
 				amount := strength * (1 - float64(col-x)/float64(max(1, width-1))) * (1 - 0.7*float64(row-y)/float64(max(1, height-1)))
+				if flat {
+					amount = strength * 0.5
+				}
 				if primitive == header {
 					position := float64(col-x) / float64(max(1, width-1))
+					if flat {
+						position = 0.5
+					}
 					hue := blend(accent, glow, position)
 					style = style.Background(blend(background, hue, 0.22))
 					if height >= 3 && row == y+height-1 {
@@ -221,6 +233,9 @@ func (w *workspace) illuminatePanel(box *tview.Box, focused func() bool, colour 
 					continue
 				}
 				horizontal := 1 - float64(col-x)/float64(max(1, width-1))
+				if w.limitedColours {
+					horizontal, vertical = 0.5, 0.5
+				}
 				r, combining, style, _ := screen.GetContent(col, row)
 				style = style.Background(base)
 				if rail && (row == y+height-1 || col == x || col == x+width-1) {

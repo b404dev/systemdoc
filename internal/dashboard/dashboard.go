@@ -580,8 +580,14 @@ func (w *workspace) updateDashboard() {
 		card.SetBorderColor(tcell.GetColor(border))
 	}
 	shortStatus := "waiting"
+	if w.limitedColours {
+		shortStatus = "256 colours · see troubleshooting"
+	}
 	if !w.lastRefresh[w.mode].IsZero() {
 		shortStatus = "sampled " + w.lastRefresh[w.mode].Format("15:04:05")
+		if w.limitedColours {
+			shortStatus += " · 256 colours"
+		}
 	}
 	if w.paused {
 		shortStatus = "PAUSED"

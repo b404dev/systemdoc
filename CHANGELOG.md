@@ -4,7 +4,9 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
-Nothing yet.
+### Fixes
+
+- Blocky gradients over SSH. sshd forwards `TERM` but not `COLORTERM`, so a 24-bit terminal looked like 256 colours on the remote host and every blend snapped to palette blocks. `--ssh` now forwards the local terminal's colour capability as `COLORTERM=truecolor`. When a terminal really is limited to 256 colours, panels take a single flat tint instead of a gradient and the status line says `256 colours`; the troubleshooting guide covers manual SSH sessions and tmux.
 
 ## v0.1.1 - 2026-09-14
 
