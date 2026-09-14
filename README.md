@@ -20,8 +20,6 @@ curl -fsSL https://raw.githubusercontent.com/b404dev/systemdoc/main/install.sh |
 
 The installer downloads the latest published release, verifies its SHA-256 checksum, and installs `~/.local/bin/systemdoc`. Add that directory to your `PATH` if needed. Run the same command to update.
 
-> Release preparation: the public repository URL and first published release must be in place before this command is live. See [the release guide](docs/releasing.md).
-
 Prefer to inspect the script first, pin a version, install elsewhere, or build from source? See [installation](docs/installation.md).
 
 ## Start here
