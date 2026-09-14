@@ -20,10 +20,13 @@ func parseCommand(text string, currentUser bool) (parsedCommand, error) {
 	result := parsedCommand{user: currentUser, tab: -1}
 	parts := strings.Fields(text)
 	if len(parts) < 3 || strings.ContainsAny(text, ";|&`$<>\n\r") {
-		return result, fmt.Errorf("use a supported systemctl, journalctl, or docker command without shell syntax")
+		return result, fmt.Errorf("use a supported systemctl, journalctl, docker, or kubectl command without shell syntax")
 	}
 	name := parts[0]
 	parts = parts[1:]
+	if name == "kubectl" {
+		return parseKubectlCommand(parts)
+	}
 	if name == "launchctl" {
 		if !usesLaunchd() {
 			return result, fmt.Errorf("launchctl commands require macOS")
@@ -94,6 +97,76 @@ func parseCommand(text string, currentUser bool) (parsedCommand, error) {
 	return result, nil
 }
 
+// parseKubectlCommand accepts the pod-scoped kubectl vocabulary:
+// logs [-f] POD, describe pod POD, get pod POD -o yaml, top pod POD and
+// delete pod POD, each with an optional -n/--namespace NAMESPACE (default
+// "default"). The target is normalised to the pod workload ID.
+func parseKubectlCommand(parts []string) (parsedCommand, error) {
+	result := parsedCommand{mode: 1, tab: -1}
+	namespace := "default"
+	var rest []string
+	for i := 0; i < len(parts); i++ {
+		switch parts[i] {
+		case "-n", "--namespace":
+			if i+1 >= len(parts) {
+				return result, fmt.Errorf("--namespace needs a value")
+			}
+			namespace = parts[i+1]
+			i++
+		default:
+			if value, ok := strings.CutPrefix(parts[i], "--namespace="); ok {
+				namespace = value
+				continue
+			}
+			rest = append(rest, parts[i])
+		}
+	}
+	usage := fmt.Errorf("use kubectl logs [-f] POD, describe pod POD, get pod POD -o yaml, top pod POD or delete pod POD, with optional -n NAMESPACE")
+	if len(rest) < 2 {
+		return result, usage
+	}
+	var target string
+	switch rest[0] {
+	case "logs":
+		args := rest[1:]
+		if len(args) == 2 && (args[0] == "-f" || args[0] == "--follow") {
+			args = args[1:]
+		}
+		if len(args) != 1 {
+			return result, usage
+		}
+		target, result.tab = args[0], 1
+	case "describe", "top", "delete":
+		if len(rest) != 3 || rest[1] != "pod" {
+			return result, usage
+		}
+		target = rest[2]
+		switch rest[0] {
+		case "describe":
+			result.tab = 0
+		case "top":
+			result.tab = 3
+		default:
+			result.verb = "delete"
+		}
+	case "get":
+		if len(rest) != 5 || rest[1] != "pod" || rest[3] != "-o" || rest[4] != "yaml" {
+			return result, usage
+		}
+		target, result.tab = rest[2], 2
+	default:
+		return result, usage
+	}
+	if target == "" || strings.HasPrefix(target, "-") || strings.ContainsAny(target, "*?[") {
+		return result, fmt.Errorf("a pod name is required")
+	}
+	if ns, name, ok := strings.Cut(target, "/"); ok {
+		namespace, target = ns, name
+	}
+	result.target = podID(namespace, target)
+	return result, nil
+}
+
 func (w *workspace) commandDialog() {
 	field := tview.NewInputField().SetLabel(": ").SetFieldWidth(0)
 	field.SetBorder(true).SetTitle(" Commands · Tab completes · Up/Down history · Escape cancels ")
@@ -103,12 +176,19 @@ func (w *workspace) commandDialog() {
 		if usesLaunchd() {
 			prefixes = []string{"launchctl print system/", "launchctl print " + launchDomain(true) + "/", "launchctl kickstart -k " + launchDomain(w.user) + "/", "docker logs ", "docker restart "}
 		}
+		if kubeLabel() != "" {
+			prefixes = append(prefixes, "kubectl logs ", "kubectl describe pod ")
+		}
 		for _, prefix := range prefixes {
 			if strings.HasPrefix(prefix, text) {
 				candidates = append(candidates, prefix)
 			}
+			kubectl := strings.HasPrefix(prefix, "kubectl ")
 			for _, items := range w.items {
 				for _, item := range items {
+					if kubectl != isPod(item) {
+						continue
+					}
 					candidate := prefix + item.Name
 					if strings.HasPrefix(candidate, text) {
 						candidates = append(candidates, candidate)
@@ -186,7 +266,11 @@ func (w *workspace) commandDialog() {
 				}
 			}
 			if !found {
-				w.items[w.mode] = append(w.items[w.mode], workload{ID: command.target, Name: command.target, State: "requested"})
+				placeholder := workload{ID: command.target, Name: strings.TrimPrefix(command.target, podPrefix), State: "requested"}
+				if isPod(placeholder) {
+					placeholder.Project, _ = podRef(placeholder)
+				}
+				w.items[w.mode] = append(w.items[w.mode], placeholder)
 				w.selected[w.mode] = command.target
 			}
 			w.filters[w.mode] = ""

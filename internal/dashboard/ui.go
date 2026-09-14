@@ -90,6 +90,7 @@ type Options struct {
 	Docker     bool
 	Filter     string
 	ActiveOnly bool
+	Kubectl    string
 }
 
 func Run(options Options) error {
@@ -100,6 +101,9 @@ func Run(options Options) error {
 		if output, err := command(ctx, "docker", "context", "show"); err == nil {
 			os.Setenv("DOCKER_CONTEXT", strings.TrimSpace(output))
 		}
+	}
+	if strings.TrimSpace(options.Kubectl) != "" {
+		os.Setenv("SYSTEMDOC_KUBECTL", strings.TrimSpace(options.Kubectl))
 	}
 	w := newWorkspace(ctx, options.User)
 	if options.Docker {
@@ -225,12 +229,29 @@ func (w *workspace) contextLabel() string {
 		contextLabel = serviceManager() + " / user"
 	}
 	if w.mode == 1 {
-		contextLabel = os.Getenv("DOCKER_CONTEXT")
-		if contextLabel == "" {
-			contextLabel = "Docker CLI endpoint"
-		}
+		contextLabel = containerContextLabel(os.Getenv("DOCKER_CONTEXT"))
 	}
 	return contextLabel
+}
+
+// containerContextLabel names both container backends: the Docker endpoint
+// and, when one is detected, the Kubernetes stack that shares the suite.
+func containerContextLabel(dockerContext string) string {
+	label := dockerContext
+	if label == "" {
+		label = "Docker CLI endpoint"
+	}
+	stack, kubeErr, dockerErr := kubeStatus()
+	if dockerErr != "" && stack != "" {
+		label = "docker unavailable"
+	}
+	switch {
+	case stack != "":
+		label += " + " + stack
+	case kubeErr != "":
+		label += " · kubernetes unreachable"
+	}
+	return label
 }
 
 func (w *workspace) hostName() string {
@@ -359,8 +380,12 @@ func (w *workspace) renderTable() {
 	w.sortWorkloads()
 	p := w.palette()
 	headers := []string{"WORKLOAD", "STATE", "CPU", "MEMORY"}
+	withPods := w.mode == 1 && kubeLabel() != ""
 	if w.mode == 1 {
 		headers[0] = "CONTAINER"
+		if withPods {
+			headers[0] = "CONTAINER · POD"
+		}
 	}
 	if w.zoom == 1 {
 		if w.mode == 0 {
@@ -369,6 +394,8 @@ func (w *workspace) renderTable() {
 				enablement = "OVERRIDE"
 			}
 			headers = append(headers, enablement, "SUBSTATE", "DESCRIPTION")
+		} else if withPods {
+			headers = append(headers, "PROJECT · NS", "HEALTH / STATUS", "IMAGE")
 		} else {
 			headers = append(headers, "PROJECT", "HEALTH / STATUS", "IMAGE")
 		}
@@ -535,7 +562,7 @@ func (w *workspace) showDetail() {
 				if tab == 3 && mode == 0 && !usesLaunchd() && err == nil {
 					output = w.resourceOutput(selected.ID, output)
 				}
-				if tab == 3 && mode == 1 && err == nil {
+				if tab == 3 && mode == 1 && err == nil && !isPod(selected) {
 					output = dockerResourceOutput(output)
 				}
 				if tab == 3 || p != w.palette() {

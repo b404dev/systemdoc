@@ -13,7 +13,7 @@ Systemdoc is organised around five live operational suites. Press `0` from any s
 | Suite | Purpose | Use it when you need to… |
 | --- | --- | --- |
 | **1 · Services** | Native service control and diagnosis | Find failed systemd/launchd jobs, inspect status/configuration/dependencies, follow or search logs, review timers and run exact-target lifecycle actions. |
-| **2 · Containers** | Docker runtime and Compose workflows | Read health/resources, inspect ports/mounts/networks/limits, follow logs, examine raw JSON, or validate and operate a Compose project. |
+| **2 · Containers** | Docker runtime, Compose workflows and a single-node Kubernetes stack | Read health/resources, inspect ports/mounts/networks/limits, follow logs, examine raw JSON, validate and operate a Compose project, or inspect pods, events, Services and manifests from k0s, k3s, kind, minikube or microk8s. |
 | **3 · Network** | Host ports, flows, interfaces and speed | Identify a listener or connection owner, filter by port/PID/process/protocol/state, inspect interfaces, watch download/upload throughput, or jump to process detail. |
 | **4 · Processes** | Host resource, ownership and signal explorer | Rank CPU/RSS, inspect parent/child trees and full commands, find zombies, review a process signal, or pivot from a PID to its service and ports. |
 | **5 · Storage** | Filesystem capacity and reclaim investigation | Find full mounts or inode pressure, sort/filter storage, and identify deleted files that are still held open. |
@@ -27,6 +27,14 @@ Services use systemd on Linux and launchd on macOS. See [macOS services](macos.m
 **Systemd** combines loaded services and installed unit files, separates enablement from runtime state, and shows available CPU/memory accounting. The inspector provides status, streaming journal, source configuration, sampled resources, and dependencies. Runtime aliases such as `dbus.service` resolve to their canonical service; searching an alias finds that service without duplicating its active count. Template files (`name@.service`) are labelled separately and require a named instance for runtime inspection. An installed file absent from the runtime snapshot is labelled `unknown`, not guessed inactive or unloaded. The compact selected-service band shows runtime state/substate, boot enablement and resources; Overview retains load state and the full description. Toggle system/user scope with `u`. Press `i` or click **Active only** to hide inactive services; the systemd choice persists between sessions. `--active-only` enables the filter at launch, including over SSH.
 
 **Docker** shows observed containers with state and available CPU/memory statistics. The selected-workload card and expanded table expose health/status, image, and Compose project membership. The Overview tab shows container name and ID, image, state and health, restart policy, Compose membership, host/container ports, volumes and bind mounts, attached networks and addresses, runtime options, limits, and labels. Published ports and exposed-only ports are distinguished; configured bindings without a live mapping are labeled. Mounts include access mode, source, and destination. Environment values remain in the full inspect JSON (`c`), rather than the overview. `d` opens Connections with ports, mounts, networks, and labels; `l` streams logs and `r` reads live resource statistics. Structured Docker views wrap long paths and values; `z` expands them. Press `p` for Compose projects, including registered projects whose containers are down.
+
+**Kubernetes on the same node** joins the Containers suite when a single-node stack is reachable: k0s, k3s, kind, k3d, minikube, microk8s, Docker Desktop, or any cluster the current `kubectl` context can reach. Systemdoc probes `kubectl` first, then the embedded `k0s kubectl`, `k3s kubectl` and `microk8s kubectl`, and asks `kind get clusters` for a context when plain `kubectl` cannot connect. Pods appear beside containers as `namespace/name` rows; the masthead names the detected distribution, version and node count, and the expanded table's project column shows the namespace. Filter with `project:kube-system` or by pod name. A kind, k3d or minikube node container is grouped under its cluster (`kind:dev`) rather than as standalone.
+
+Pod state uses the same vocabulary as containers so the Active and Attention cards mean one thing: **running** when the pod runs (a running pod with a container that is not ready says so and counts as attention), **pending** with the blocking reason (`ContainerCreating`, `Unschedulable`), **restarting** for `CrashLoopBackOff`, **failed** for image and configuration errors, **succeeded** for completed Jobs and **terminating** while a pod is being removed. CPU and memory come from the Metrics API (`kubectl top`) and stay blank without metrics-server; CPU is shown as a share of one logical CPU like everywhere else.
+
+The Overview tab shows the pod's phase, owner (the Deployment is recovered from its ReplicaSet), node, QoS class, each container's image, state, last exit, restarts, requests, limits, probes and ports, init containers, volumes with their mounts and access mode, conditions, the newest events (a warning such as `BackOff` sits at the top) and labels. Environment values and annotation contents stay in the full manifest (`c`, YAML). `d` opens Connections with pod and host addresses, container ports and the Services whose selectors match the pod's labels, including cluster IP, node ports and load-balancer addresses. `l` streams every container's log with a container prefix and `r` reads the Metrics API per container. Actions offer **restart** as a controller rollout for Deployment, StatefulSet and DaemonSet pods, **delete** for any pod, a pod shell and native log follow. Compose project menus and Docker actions are unchanged for containers.
+
+Detection is automatic; `--kubectl "k0s kubectl"` or `SYSTEMDOC_KUBECTL` pins an exact invocation (for example `kubectl --context kind-dev`). k0s, k3s and microk8s keep their admin kubeconfig root-only, so run Systemdoc with the permissions you would use for `kubectl` itself; it never elevates. A stack that stops answering is dropped and probed again with back-off, and the masthead says `kubernetes unreachable` while a kubectl is installed but no cluster answers. Without Docker, the suite still shows the pods and the masthead says `docker unavailable`.
 
 Docker uses the selected CLI endpoint. At startup, the current Docker context is pinned when no explicit `DOCKER_HOST` or `DOCKER_CONTEXT` is supplied. Override it explicitly:
 
@@ -74,7 +82,7 @@ Press `z` to expand the focused pane. An expanded workload list reveals boot/sub
 | L | Toggle independent live log drawer |
 | x / I | Open selected workload Constellation / suite-wide incident Storyline |
 | G | Cycle block, braille and ASCII signal graphics |
-| o / l / c / r / d | Overview / logs / config / resources / dependencies (Docker: connections) |
+| o / l / c / r / d | Overview / logs / config / resources / dependencies (containers and pods: connections) |
 | R | Review restart of selected workload |
 | a | Searchable actions; type to filter, Down enters results |
 | : | Supported native-style commands with completion and session history |
@@ -134,7 +142,7 @@ Review and edit the report before saving. Tab moves from the editor to filename 
 ## Management workflows
 Press **Shift+R**, or choose restart from the visible **Actions** menu, to restart the selected service or container. Review the exact target and command, then choose Run. Systemd uses the current system/user scope; remote sessions run the command on the remote host. Lowercase `r` still opens resource metrics.
 
-Open Actions for service start/stop/restart/reload, enable/disable, mask/unmask, and reset-failed. Docker actions include start/stop/restart, pause/unpause, and removal. Every lifecycle action currently presents an exact-target review. Operation history distinguishes command completion from actual workload health and retains bounded output.
+Open Actions for service start/stop/restart/reload, enable/disable, mask/unmask, and reset-failed. Docker actions include start/stop/restart, pause/unpause, and removal. Kubernetes pods offer restart (a `kubectl rollout restart` of the owning Deployment, StatefulSet or DaemonSet) and delete; a bare pod cannot be restarted and the review says so. Every lifecycle action currently presents an exact-target review. Operation history distinguishes command completion from actual workload health and retains bounded output.
 
 For terminal authorization on system services, choose **System service authorization**. Native editing and shell workflows suspend the interface and restore it when the tool exits. A container shell defaults to `/bin/sh`.
 
@@ -157,9 +165,14 @@ journalctl -u nginx.service -f
 docker logs --follow website-web-1
 docker inspect website-web-1
 docker restart website-web-1
+kubectl logs -f web-6d4cf56db6-x7k2p -n shop
+kubectl describe pod web-6d4cf56db6-x7k2p -n shop
+kubectl get pod web-6d4cf56db6-x7k2p -o yaml -n shop
+kubectl top pod web-6d4cf56db6-x7k2p -n shop
+kubectl delete pod web-6d4cf56db6-x7k2p -n shop
 ```
 
-Read commands open the corresponding inspector. Lifecycle commands use the same review flow as Actions. Pipelines, shell expansions, wildcard mutations, and arbitrary shell commands are rejected. Use the project menu for Compose operations.
+Read commands open the corresponding inspector. `kubectl` commands are pod-scoped, accept `-n`/`--namespace` (default `default`) or a `namespace/pod` target, and run through the detected kubectl. Lifecycle commands use the same review flow as Actions. Pipelines, shell expansions, wildcard mutations, and arbitrary shell commands are rejected. Use the project menu for Compose operations.
 
 ## AI assistance
 Actions → **AI troubleshooting** offers installed Codex or Claude CLIs. Review/edit the exact text before sending; status/name are included, while logs/configuration are pasted explicitly. There is no automatic credential redaction or hidden bulk context collection. AI can explain failures or draft a service from your requirements. Ctrl-D opens a response as an editable service draft; validation and installation remain separate.

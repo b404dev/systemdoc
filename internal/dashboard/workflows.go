@@ -153,15 +153,25 @@ func (w *workspace) actions() {
 	if !usesLaunchd() {
 		add("New service draft", "Create a service file in an editor, then verify", w.newService)
 	}
+	item := w.current()
 	verbs := serviceVerbs()
 	if w.mode == 1 {
 		verbs = []string{"start", "stop", "restart", "pause", "unpause", "rm"}
+		if isPod(item) {
+			verbs = podVerbs(item)
+		}
 	}
 	for _, verb := range verbs {
 		verb := verb
-		add(verb, "Review exact target and command", func() { w.confirmAction(verb) })
+		description := "Review exact target and command"
+		if isPod(item) && verb == "restart" {
+			description = "Rollout restart of " + item.Owner + " · review exact command"
+		}
+		if isPod(item) && verb == "delete" {
+			description = "Delete the pod; its controller, if any, replaces it"
+		}
+		add(verb, description, func() { w.confirmAction(verb) })
 	}
-	item := w.current()
 	if w.mode == 0 {
 		if !w.user {
 			add("System service authorization", "Run a lifecycle command with terminal sudo authentication", w.authorizedActions)
@@ -186,6 +196,15 @@ func (w *workspace) actions() {
 				}
 			})
 		}
+	} else if isPod(item) {
+		namespace, name := podRef(item)
+		argv := kubeArgv()
+		add("Pod shell", "Open /bin/sh in the pod's default container with kubectl exec", func() {
+			w.native(argv[0], append(append([]string{}, argv[1:]...), "exec", "-it", "--namespace", namespace, name, "--", "/bin/sh")...)
+		})
+		add("Follow logs", "Open kubectl logs -f for every container; Ctrl-C returns", func() {
+			w.native(argv[0], append(append([]string{}, argv[1:]...), kubeLogArgs(item, true, "100")...)...)
+		})
 	} else {
 		add("Container shell", "Open /bin/sh in selected container", func() {
 			if item.ID != "" {

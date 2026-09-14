@@ -16,6 +16,7 @@ type workload struct {
 	ID, Name, State, Detail, Project, Description string
 	Enablement                                    string
 	LoadState, Aliases                            string
+	Owner                                         string
 	UnitFileOnly                                  bool
 	CPU, Memory                                   string
 	CPUCounter                                    uint64
@@ -24,9 +25,14 @@ type workload struct {
 }
 
 func command(ctx context.Context, name string, args ...string) (string, error) {
+	return commandLimit(ctx, 0, name, args...)
+}
+
+// commandLimit runs a bounded command; limit 0 keeps the default 1 MiB tail.
+func commandLimit(ctx context.Context, limit int, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	var buffer tailBuffer
+	buffer := tailBuffer{limit: limit}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = &buffer
 	cmd.Stderr = &buffer
@@ -49,28 +55,7 @@ func inventory(ctx context.Context, mode int, user bool) ([]workload, error) {
 // List identities and states without waiting for resource sampling.
 func listWorkloads(ctx context.Context, mode int, user bool) ([]workload, error) {
 	if mode == 1 {
-		output, err := command(ctx, "docker", "ps", "--all", "--no-trunc", "--format", "{{json .}}")
-		if err != nil {
-			return nil, err
-		}
-		var result []workload
-		for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-			if line == "" {
-				continue
-			}
-			var row struct{ ID, Names, State, Status, Image, Labels string }
-			if err := json.Unmarshal([]byte(line), &row); err != nil {
-				return nil, err
-			}
-			project := "standalone"
-			for _, label := range strings.Split(row.Labels, ",") {
-				if value, ok := strings.CutPrefix(label, "com.docker.compose.project="); ok {
-					project = value
-				}
-			}
-			result = append(result, workload{ID: row.ID, Name: row.Names, State: row.State, Detail: row.Status, Project: project, Description: row.Image})
-		}
-		return result, nil
+		return listContainers(ctx)
 	}
 	if usesLaunchd() {
 		return listLaunchServices(ctx, user)
@@ -90,6 +75,76 @@ func listWorkloads(ctx context.Context, mode int, user bool) ([]workload, error)
 	result := make([]workload, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, workload{ID: row.Unit, Name: row.Unit, State: row.Active, Detail: row.Sub, Description: row.Description, LoadState: row.Load})
+	}
+	return result, nil
+}
+
+// listContainers merges Docker containers with the pods of a detected
+// Kubernetes stack. Either backend alone is enough for the suite to work; the
+// error is only returned when both are unavailable.
+func listContainers(ctx context.Context) ([]workload, error) {
+	type podResult struct {
+		items []workload
+		stack *kubeStack
+		err   error
+	}
+	pods := make(chan podResult, 1)
+	go func() {
+		items, stack, err := listPods(ctx)
+		pods <- podResult{items, stack, err}
+	}()
+	containers, dockerErr := listDockerContainers(ctx)
+	setDockerError(dockerErr)
+	var result podResult
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result = <-pods:
+	}
+	if dockerErr != nil && result.stack == nil {
+		return nil, dockerErr
+	}
+	if dockerErr != nil && result.err != nil {
+		return nil, fmt.Errorf("%w\n\nKubernetes: %v", dockerErr, result.err)
+	}
+	return append(containers, result.items...), nil
+}
+
+// containerProject names the Compose project, or the local Kubernetes cluster
+// a node container belongs to, so kind and minikube nodes group with their stack.
+func containerProject(labels string) string {
+	project := "standalone"
+	for _, label := range strings.Split(labels, ",") {
+		key, value, _ := strings.Cut(label, "=")
+		switch key {
+		case "com.docker.compose.project":
+			project = value
+		case "io.x-k8s.kind.cluster":
+			project = "kind:" + value
+		case "k3d.cluster":
+			project = "k3d:" + value
+		case "name.minikube.sigs.k8s.io":
+			project = "minikube:" + value
+		}
+	}
+	return project
+}
+
+func listDockerContainers(ctx context.Context) ([]workload, error) {
+	output, err := command(ctx, "docker", "ps", "--all", "--no-trunc", "--format", "{{json .}}")
+	if err != nil {
+		return nil, err
+	}
+	var result []workload
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if line == "" {
+			continue
+		}
+		var row struct{ ID, Names, State, Status, Image, Labels string }
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			return nil, err
+		}
+		result = append(result, workload{ID: row.ID, Name: row.Names, State: row.State, Detail: row.Status, Project: containerProject(row.Labels), Description: row.Image})
 	}
 	return result, nil
 }
@@ -117,7 +172,25 @@ func listUnitFiles(ctx context.Context, user bool) []unitFile {
 
 func enrichInventory(ctx context.Context, mode int, user bool, items []workload) []workload {
 	if mode == 1 {
+		hasPods := false
+		for _, item := range items {
+			if isPod(item) {
+				hasPods = true
+				break
+			}
+		}
+		if !hasPods {
+			enrichDockerResources(ctx, items)
+			return items
+		}
+		// Docker stats and the Metrics API fill disjoint rows; sample them together.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			enrichKubeResources(ctx, currentKubeStack(ctx), items)
+		}()
 		enrichDockerResources(ctx, items)
+		<-done
 		return items
 	}
 	if usesLaunchd() {
@@ -171,6 +244,9 @@ func inspect(ctx context.Context, mode int, user bool, item workload, tab int) (
 	}
 	if mode == 0 && isTemplate(item) && tab != 2 {
 		return "This is a systemd template, not a running service instance.\n\n" + item.ID + " defines configuration for named instances.\nUse c to read its configuration, or select an instance such as " + strings.Replace(item.ID, "@.", "@NAME.", 1) + " to inspect runtime state, logs and resources.", nil
+	}
+	if mode == 1 && isPod(item) {
+		return inspectPod(ctx, item, tab)
 	}
 	if mode == 1 {
 		if tab == 1 {

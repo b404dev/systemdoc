@@ -14,8 +14,8 @@ func (w *workspace) controlDeck() {
 			func() { w.navigateToSuite(0) },
 		},
 		{
-			"02  " + w.icon(iconContainers) + "  CONTAINERS  ·  runtime & Compose",
-			fmt.Sprintf("%d observed · %d running · %d need attention · health, ports, mounts, networks, logs, inspect JSON and project workflows", len(w.items[1]), containers.active, containers.attention),
+			"02  " + w.icon(iconContainers) + "  CONTAINERS  ·  Docker, Compose & Kubernetes",
+			fmt.Sprintf("%d observed · %d running · %d need attention · health, ports, mounts, networks, logs, inspect JSON, Compose workflows and single-node Kubernetes pods (k0s, k3s, kind, minikube, microk8s)", len(w.items[1]), containers.active, containers.attention),
 			func() { w.navigateToSuite(1) },
 		},
 		{

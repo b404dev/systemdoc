@@ -34,6 +34,10 @@ func collectSnapshot(ctx context.Context, request snapshotRequest) string {
 	if request.Mode == 1 {
 		backend = "Docker"
 		scope = request.Endpoint
+		if isPod(request.Item) {
+			backend = "Kubernetes · " + available(kubeLabel())
+			scope = "namespace " + request.Item.Project
+		}
 	}
 	fmt.Fprintf(&out, "SYSTEMDOC TROUBLESHOOTING SNAPSHOT\nCaptured: %s\nHost: %s\nBackend: %s\nScope: %s\nWorkload: %s\nID: %s\n\nObservations are collected sequentially, not atomically. Review before sharing.\n\n", request.At.Format(time.RFC3339), request.Host, backend, scope, request.Item.Name, request.Item.ID)
 	sections := []struct {

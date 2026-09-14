@@ -21,6 +21,9 @@ func (w *workspace) inspectorTabName() string {
 		return "Connections"
 	}
 	if w.mode == 1 && w.tab == 2 {
+		if isPod(w.current()) {
+			return "Manifest"
+		}
 		return "Inspect JSON"
 	}
 	return tabNames[w.tab]
@@ -49,7 +52,7 @@ func available(value string) string {
 }
 
 func needsAttention(item workload) bool {
-	return item.State == "failed" || item.State == "restarting" || strings.Contains(item.Detail, "unhealthy")
+	return item.State == "failed" || item.State == "restarting" || strings.Contains(item.Detail, "unhealthy") || strings.HasPrefix(item.Detail, "not ready")
 }
 
 func isActive(item workload) bool { return item.State == "active" || item.State == "running" }
@@ -61,7 +64,7 @@ func stateColour(item workload, p palette) string {
 	if isActive(item) {
 		return p.success
 	}
-	if item.State == "activating" || item.State == "deactivating" || item.State == "paused" {
+	if item.State == "activating" || item.State == "deactivating" || item.State == "paused" || item.State == "pending" || item.State == "terminating" {
 		return p.warning
 	}
 	return p.muted
@@ -631,6 +634,12 @@ func (w *workspace) updateSelectionCard() {
 	}
 	if w.mode == 1 {
 		context = "project " + item.Project
+		if isPod(item) {
+			context = "namespace " + item.Project
+			if item.Owner != "" {
+				context += " · " + item.Owner
+			}
+		}
 	}
 	w.selectionCard.SetTitle(" " + tview.Escape(clean(item.Name)) + " ").SetTitleColor(tcell.GetColor(p.accent))
 	state := item.State

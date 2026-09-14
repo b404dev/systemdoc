@@ -34,7 +34,11 @@ func (w *workspace) streamLogs(ctx context.Context, mode int, user bool, item wo
 // followLogs batches bounded CLI output; callers choose how to display it.
 func followLogs(ctx context.Context, mode int, user bool, item workload, update func(string, string)) {
 	name, args := "journalctl", []string{"--unit", item.ID, "--follow", "--lines", "150", "--no-pager", "--output=short-iso"}
-	if mode == 1 {
+	if mode == 1 && isPod(item) {
+		argv := kubeArgv()
+		name = argv[0]
+		args = append(append([]string{}, argv[1:]...), kubeLogArgs(item, true, "150")...)
+	} else if mode == 1 {
 		name = "docker"
 		args = []string{"logs", "--follow", "--tail", "150", "--timestamps", item.ID}
 	} else if user {

@@ -21,6 +21,9 @@ func (w *workspace) load() {
 			delete(w.detailCache, key)
 		}
 	}
+	if w.mode == 1 {
+		retryKubeProbe()
+	}
 	w.startInventory(w.mode)
 }
 

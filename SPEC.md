@@ -4,7 +4,7 @@ This document describes the implemented application. [The user guide](docs/usage
 
 ## Scope
 
-A Linux and macOS terminal workspace with two modes: native services (systemd on Linux, launchd on macOS) and Docker containers. Compose project workflows live within Docker. Optional AI assistance is contextual. SSH launches the full application on the target host rather than aggregating machines into a central dashboard.
+A Linux and macOS terminal workspace with two modes: native services (systemd on Linux, launchd on macOS) and containers. The container mode merges Docker containers with the pods of one detected Kubernetes stack on the same node (k0s, k3s, kind, k3d, minikube, microk8s or any reachable kubectl context). Compose project workflows live within the container mode. Optional AI assistance is contextual. SSH launches the full application on the target host rather than aggregating machines into a central dashboard.
 
 ## Components
 
@@ -17,6 +17,7 @@ A Linux and macOS terminal workspace with two modes: native services (systemd on
 | Launchd | macOS `launchctl print` scoped jobs, `ps` process accounting, plist inspection, PID-scoped unified logs, reviewed lifecycle commands |
 | Docker | Installed CLI, pinned endpoint, `ps`, `stats`, container-typed `inspect`, streaming logs |
 | Docker overview | Typed projection of inspect JSON into identity, ports, mounts, networks, runtime, labels; raw JSON remains available |
+| Kubernetes | Detected kubectl invocation (`kubectl`, `k0s kubectl`, `k3s kubectl`, `microk8s kubectl`, kind contexts, or `--kubectl`/`SYSTEMDOC_KUBECTL`); node list names the distribution; `get pods -A -o json`, `top pods`, pod JSON/YAML, events, Services, prefixed multi-container logs; `rollout restart` and `delete pod` as reviewed actions |
 | Host network | TCP/UDP socket ownership, interfaces, and successive-counter download/upload rates from `/proc/net/dev` or `netstat -ibn` |
 | Compose | Installed `docker compose`; project files, profiles, environment files, workdir, endpoint |
 | Settings | JSON under XDG config, owner-only atomic saves |
@@ -28,7 +29,7 @@ Versions are pinned in [go.mod](go.mod). Release binaries use `CGO_ENABLED=0` fo
 
 ## Data flow and responsiveness
 
-Systemd and Docker inventory jobs start independently. Identity/state inventory is published before slower resource enrichment. Each backend has one in-flight job; cached inventory makes mode switches immediate while stale data refreshes in the background. Changed scopes discard obsolete results.
+Systemd and container inventory jobs start independently. Within the container job, Docker and Kubernetes are listed concurrently and either alone is sufficient; a failed kubectl probe backs off (30 s doubling to 10 min) so a host with kubectl but no cluster is not asked on every refresh, and a stack that stops answering is dropped and re-probed. Identity/state inventory is published before slower resource enrichment. Each backend has one in-flight job; cached inventory makes mode switches immediate while stale data refreshes in the background. Changed scopes discard obsolete results.
 
 The selected inspector has a bounded cache and a short selection debounce. Fleet and per-workload signal histories are bounded and reuse completed inventory samples. The Storyline reuses bounded change observations. Constellation invokes the existing relationship inspection only when opened; it adds no background loop. Context cancellation stops obsolete subprocess work. Log streams retain bounded tail buffers, format snapshots away from the UI thread, and show a 500-line live window. The full retained buffer is available in history/export. Refresh interval is configurable from 2 to 300 seconds.
 
@@ -36,13 +37,15 @@ The selected inspector has a bounded cache and a short selection debounce. Fleet
 
 Unknown values stay unknown. CPU samples come from actual counters, and resets do not produce invented rates. Workload totals are not whole-host metrics. Aliases resolve to canonical services without inflating active counts. Installed files absent from the runtime snapshot are not guessed inactive. Templates require instances for runtime operations.
 
+Pods carry a `pod:` ID prefix so every route distinguishes them from container IDs without a third mode. Pod state is reduced to the shared vocabulary (running, pending, restarting, failed, succeeded, terminating) with the Kubernetes reason kept in the detail; a running pod with a container that is not ready counts as attention. Pod CPU is a share of one logical CPU derived from Metrics API millicores and stays unknown without metrics-server. The Deployment owning a pod is recovered from the ReplicaSet name and pod-template hash. Environment values and annotation contents are not copied into the pod overview.
+
 Docker overview derives from a single selected-container inspection. Port rendering retains protocol and every host binding, including IPv6; exposed-only and configured-only mappings are identified. Mounts retain type, source/name, destination, and access. Networks list observed endpoint attributes. Environment values remain in full inspect JSON. Labels and command arguments can still contain user-provided data.
 
 ## Action boundaries
 
 Lifecycle operations review the exact target and command. Successful command completion does not prove workload health. Draft validation and installation are separate; new service installation does not enable or start it. Compose deployment is separate from source creation. Command input supports a defined argv vocabulary, not an arbitrary shell.
 
-The process inherits native permissions; it does not reconfigure Docker socket access. Remote actions execute on the remote host. Settings and project definitions belong to the user running the application. Untrusted output is cleaned and escaped before rich-text rendering. See [security](SECURITY.md).
+Pod restart is a controller rollout; a bare pod cannot be restarted and the request is refused with the reason. The process inherits native permissions; it does not reconfigure Docker socket access or read root-only kubeconfigs. Remote actions execute on the remote host. Settings and project definitions belong to the user running the application. Untrusted output is cleaned and escaped before rich-text rendering. See [security](SECURITY.md).
 
 ## Verification and distribution
 

@@ -24,7 +24,11 @@ func constellationText(item workload, mode int, raw string, nerd bool) string {
 	if item.CPU != "" || item.Memory != "" {
 		fmt.Fprintf(&out, "├─ resources  CPU %s · MEM %s\n", available(item.CPU), available(item.Memory))
 	}
-	if mode == 1 {
+	if mode == 1 && isPod(item) {
+		fmt.Fprintf(&out, "├─ namespace  %s\n", available(item.Project))
+		fmt.Fprintf(&out, "├─ owner      %s\n", available(item.Owner))
+		fmt.Fprintf(&out, "├─ images     %s\n", available(item.Description))
+	} else if mode == 1 {
 		fmt.Fprintf(&out, "├─ project    %s\n", available(item.Project))
 		fmt.Fprintf(&out, "├─ image      %s\n", available(item.Description))
 	}

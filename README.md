@@ -1,6 +1,6 @@
 # Systemdoc
 
-**Your Linux and macOS services and Docker containers, in one terminal workspace.**
+**Your Linux and macOS services, Docker containers and single-node Kubernetes pods, in one terminal workspace.**
 
 Find a failing workload, follow its logs, inspect its configuration, and take action without juggling terminals. Systemdoc brings live telemetry, keyboard navigation, and a dark, glowing interface to the native tools you already use.
 
@@ -38,7 +38,7 @@ Press `0` anywhere in the live workspace to open the **Control Deck**. It explai
 | Suite | What it is for | Rich workflows |
 | --- | --- | --- |
 | **1 · Services** | Operate and troubleshoot native systemd or launchd workloads. | Live state and accounting, status, streaming/retained log search, source configuration, dependencies/runtime data, timers, activity, reviewed lifecycle actions, drafts and troubleshooting snapshots. |
-| **2 · Containers** | Understand individual Docker containers and the Compose projects behind them. | Health and resource telemetry, logs, inspect JSON, ports, mounts, networks, limits and labels; Compose discovery, validation, preview, build, pull and reviewed deployment actions. |
+| **2 · Containers** | Understand individual Docker containers, the Compose projects behind them, and the pods of a single-node Kubernetes stack (k0s, k3s, kind, minikube, microk8s). | Health and resource telemetry, logs, inspect JSON, ports, mounts, networks, limits and labels; Compose discovery, validation, preview, build, pull and reviewed deployment actions; pod overview with events, Services, manifests, Metrics API readings, rollout restart and delete. |
 | **3 · Network** | Answer “what owns this port?” and inspect the host’s network surface. | TCP listeners, UDP bindings, active connections, interfaces, live download/upload speed, PID/process/user ownership, precise filters, process drill-down and private snapshot export. |
 | **4 · Processes** | Find resource-heavy or unhealthy processes, act on them, and trace where they belong. | CPU/RSS ranking, parent trees, full commands, user/state/PID filters, zombie detection, reviewed process signals, child/parent context, and direct jumps to associated services or ports. |
 | **5 · Storage** | Spot capacity and inode pressure before it becomes an outage. | Mount usage and free-space sorting, inode accounting, shared-pool caveats, deleted files still held open, pressure highlighting, filtering and private evidence export. |
@@ -91,10 +91,11 @@ Press `t` to preview; Enter saves and Escape restores. JetBrainsMono Nerd Font i
 | macOS services · initial support | `launchctl`, `ps`, `plutil`; unified `log` for running jobs |
 | Containers | Docker CLI and access to the chosen Docker daemon |
 | Compose projects | Docker Compose plugin (`docker compose`) |
+| Kubernetes pods | `kubectl` with a reachable context, or the embedded `k0s kubectl`, `k3s kubectl` or `microk8s kubectl`; metrics-server for CPU/memory (optional) |
 | Remote sessions | OpenSSH client; a remote binary or `--upload` |
 | Optional AI help | An installed, separately authenticated Codex or Claude CLI |
 
-An unavailable backend is shown in the UI; it does not disable the other mode. Run Systemdoc as your regular user. Native systemd, journal, Docker, and SSH permissions still apply.
+An unavailable backend is shown in the UI; it does not disable the other mode, and the Containers suite works with Docker alone, Kubernetes alone, or both. Run Systemdoc as your regular user. Native systemd, journal, Docker, and SSH permissions still apply.
 
 ## Documentation
 
@@ -110,7 +111,7 @@ An unavailable backend is shown in the UI; it does not disable the other mode. R
 | [Release guide](docs/releasing.md) | GitHub setup, static binaries, checksums, draft releases |
 | [Security](SECURITY.md) | Permissions, configuration data, reporting vulnerabilities |
 
-Try the optional [container playground](playground/README.md) for a small, real Compose project.
+Try the optional [container playground](playground/README.md) for a small, real Compose project and a single-node k0s stack with sample pods.
 
 ## Project status
 

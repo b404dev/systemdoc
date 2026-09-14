@@ -16,14 +16,18 @@ import (
 
 // tailBuffer bounds command output even during long builds or noisy failures.
 type tailBuffer struct {
-	mu   sync.Mutex
-	data []byte
+	mu    sync.Mutex
+	data  []byte
+	limit int
 }
 
 func (b *tailBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	const limit = 1024 * 1024
+	limit := b.limit
+	if limit <= 0 {
+		limit = 1024 * 1024
+	}
 	n := len(p)
 	if n >= limit {
 		b.data = append(b.data[:0], p[n-limit:]...)
@@ -55,6 +59,9 @@ func actionArgs(mode int, user bool, item workload, verb string) (string, []stri
 		case "start", "stop", "restart", "reload", "reset-failed":
 			return "", nil, fmt.Errorf("select a named service instance; %s is a template", item.ID)
 		}
+	}
+	if mode == 1 && isPod(item) {
+		return podActionArgs(item, verb)
 	}
 	if mode == 1 {
 		switch verb {
@@ -93,6 +100,13 @@ func (w *workspace) confirmAction(verb string) {
 	detail := name + " " + strings.Join(args, " ")
 	if w.mode == 0 && usesLaunchd() {
 		detail += "\n\nStop sends SIGTERM; launchd may restart a KeepAlive/on-demand job. Enable/disable changes future eligibility and does not load/unload or immediately stop a job."
+	}
+	if w.mode == 1 && isPod(item) {
+		if verb == "restart" {
+			detail += "\n\nRolls out new pods for " + item.Owner + " and retires the current ones, following the controller's update strategy. Successful completion means the rollout was requested, not that the new pods are ready."
+		} else {
+			detail += "\n\nDeletes this pod. A controller-owned pod is replaced by its controller; a bare pod is gone for good."
+		}
 	}
 	w.confirm(verb+" · "+item.Name, detail, func() { w.execute(item.Name, name, args) })
 }
