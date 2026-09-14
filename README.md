@@ -1,5 +1,11 @@
 # Systemdoc
 
+[![Release](https://img.shields.io/github/v/release/b404dev/systemdoc?label=release&color=6b4fbb)](https://github.com/b404dev/systemdoc/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/b404dev/systemdoc?color=3a7d5c)](LICENSE)
+[![CI](https://github.com/b404dev/systemdoc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/b404dev/systemdoc/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/b404dev/systemdoc?color=00add8)](go.mod)
+[![Platforms](https://img.shields.io/badge/platforms-linux%20amd64%20%7C%20arm64%20%C2%B7%20macOS%20arm64-4c566a)](docs/installation.md)
+
 **Your Linux and macOS services, Docker containers and single-node Kubernetes pods, in one terminal workspace.**
 
 Find a failing workload, follow its logs, inspect its configuration, and take action without juggling terminals. Systemdoc brings live telemetry, keyboard navigation, and a dark, glowing interface to the native tools you already use.
