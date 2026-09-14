@@ -6,9 +6,11 @@
 [![Go](https://img.shields.io/github/go-mod/go-version/b404dev/systemdoc?color=00add8)](go.mod)
 [![Platforms](https://img.shields.io/badge/platforms-linux%20amd64%20%7C%20arm64%20%C2%B7%20macOS%20arm64-4c566a)](docs/installation.md)
 
-**Your Linux and macOS services, Docker containers and single-node Kubernetes pods, in one terminal workspace.**
+**Everything running on this machine, on one screen, with every action reviewed before it runs.**
 
-Find a failing workload, follow its logs, inspect its configuration, and take action without juggling terminals. Systemdoc brings live telemetry, keyboard navigation, and a dark, glowing interface to the native tools you already use.
+Systemdoc exists because troubleshooting a single host meant running the same five commands every time. A service will not start, so it is `systemctl status`, then `journalctl -u`, then `systemctl cat`. A port is held open, so it is `ss -ltnp`, then `ps`, then working out which unit or container owns that PID. Something is eating the CPU, so it is `top`, then `/proc`, then `lsof`, then wondering whether killing it is safe. Systemdoc puts the answers to those questions on one screen and lets you move between them with a keypress: from a failed unit to its journal, from a listening socket to the process that owns it and the service or container it belongs to, from a hot process to its threads, open files and syscalls.
+
+It is a **host tool**, not a cluster manager. It covers what one Linux or macOS machine runs: systemd or launchd services, Docker and Compose containers, the pods of a single-node Kubernetes such as k3s or k0s, host processes, sockets and storage, and sysdig tracing when the logs do not explain it. It works over SSH by copying itself to the remote host. It never runs anything without showing you the exact command first, and it changes nothing unless you ask.
 
 ![Systemdoc's Cathedral dashboard with service inventory, telemetry, and inspector](docs/assets/dashboard.png)
 
