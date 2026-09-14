@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -329,7 +328,7 @@ func TestLiveNetworkReadOnly(t *testing.T) {
 					return
 				}
 			}
-			t.Fatal(fmt.Sprintf("test listener on port %s with current PID not found", port))
+			t.Fatalf("test listener on port %s with current PID not found", port)
 		})
 	}
 }

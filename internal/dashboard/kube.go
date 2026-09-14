@@ -20,10 +20,10 @@ import (
 const podPrefix = "pod:"
 
 type kubeStack struct {
-	argv                 []string
-	distro, version      string
-	nodes, readyNodes    int
-	nodeName, kubeconfig string
+	argv              []string
+	distro, version   string
+	nodes, readyNodes int
+	nodeName          string
 }
 
 func (s kubeStack) label() string {
@@ -55,7 +55,22 @@ func (s kubeStack) run(ctx context.Context, limit int, args ...string) (string, 
 	}
 	full := append(append([]string{}, s.argv[1:]...), "--request-timeout=6s")
 	full = append(full, args...)
-	return commandLimit(ctx, limit, s.argv[0], full...)
+	output, err := commandLimit(ctx, limit, s.argv[0], full...)
+	if err == nil && jsonRequest(args) && len(output) >= outputLimit(limit) {
+		return output, fmt.Errorf("kubectl %s returned more than %d MiB; the output was cut and cannot be decoded", strings.Join(args, " "), outputLimit(limit)>>20)
+	}
+	return output, err
+}
+
+// jsonRequest reports whether a kubectl invocation asked for JSON, which is
+// useless when the tail buffer has dropped its beginning.
+func jsonRequest(args []string) bool {
+	for i, arg := range args {
+		if (arg == "-o" || arg == "--output") && i+1 < len(args) && args[i+1] == "json" || arg == "-o=json" || arg == "--output=json" {
+			return true
+		}
+	}
+	return false
 }
 
 // Detection state is shared by the inventory worker and the UI thread.

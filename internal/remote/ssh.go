@@ -82,8 +82,23 @@ func (o Options) sshArgs(tty bool, command string) []string {
 	return append(args, "--", o.Host, command)
 }
 
+// uploadTimeout bounds the ~10 MB binary upload; SYSTEMDOC_UPLOAD_TIMEOUT
+// (a Go duration such as 30m) extends it for very slow links.
+var uploadTimeout = func() time.Duration {
+	if value, err := time.ParseDuration(os.Getenv("SYSTEMDOC_UPLOAD_TIMEOUT")); err == nil && value > 0 {
+		return value
+	}
+	return 15 * time.Minute
+}()
+
 func (o Options) capture(command string, input io.Reader) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	return o.captureWithin(2*time.Minute, command, input)
+}
+
+// captureWithin runs one remote command with its own deadline; the binary
+// upload needs far longer than the checks on a slow link.
+func (o Options) captureWithin(timeout time.Duration, command string, input io.Reader) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "ssh", o.sshArgs(false, command)...)
 	cmd.Stdin = input
@@ -142,7 +157,7 @@ func Run(o Options) error {
 		if err != nil {
 			return err
 		}
-		_, err = o.capture("umask 077; cat > "+shellQuote(o.Binary)+" && chmod 700 "+shellQuote(o.Binary), file)
+		_, err = o.captureWithin(uploadTimeout, "umask 077; cat > "+shellQuote(o.Binary)+" && chmod 700 "+shellQuote(o.Binary), file)
 		file.Close()
 		if err != nil {
 			return err

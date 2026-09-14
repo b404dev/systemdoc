@@ -4,7 +4,18 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
-Nothing yet.
+### Fixes
+
+- Subprocess output is no longer merged with stderr, so a `WARNING:` line from docker or kubectl on a successful call cannot break JSON decoding of Compose projects, Kubernetes nodes or pods. Failures still report both streams.
+- Cancelled or timed-out commands can no longer wedge the caller when a grandchild keeps the pipe open: bounded commands, Operations, log following and the AI provider now set a wait delay, and log following interrupts rather than kills so `sudo … kubectl logs -f` wrappers stop cleanly.
+- Quitting while a sysdig probe is live now waits for the probe to stop, and the container runner interrupts the named container before the CLI, so a privileged `sysdig/sysdig` container is not left running.
+- `:docker …` and `:systemd …` commands that change suite keep the loading flag and refresh schedule consistent with the new suite, so an in-flight job for the previous suite can no longer leave auto-refresh paused. Installing a service draft reloads the inventory for the new scope.
+- Host CPU% skips the guest and guest_nice columns of `/proc/stat`, which the kernel already counts inside user and nice; VM hosts were reporting inflated busy time.
+- launchd enablement accepts the `=> disabled` / `=> enabled` spelling newer launchctl releases print, and an unrecognised row no longer discards the whole table.
+- Time-bounded log search now finds the timestamp behind kubectl's `[pod/…]` prefix and parses launchd's `YYYY-MM-DD HH:MM:SS.ffffff±ZZZZ` stamps, so pod and macOS lines are no longer dropped from bounded searches.
+- A kubectl JSON read that exceeds its output cap reports the cap instead of a bare decode error.
+- The SSH binary upload has its own 15-minute deadline (`SYSTEMDOC_UPLOAD_TIMEOUT` overrides) instead of the two-minute check timeout that killed transfers on slow links.
+- Removed dead code and resolved staticcheck findings; socket state filtering compares case-insensitively without allocating.
 
 ## v0.1.0 - 2026-09-14
 

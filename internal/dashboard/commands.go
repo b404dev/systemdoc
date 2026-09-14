@@ -241,8 +241,7 @@ func (w *workspace) commandDialog() {
 		}
 		if command.tab >= 0 {
 			w.savedQuickFilters[w.mode] = w.quickFilter
-			w.mode = command.mode
-			if w.mode == 0 && w.user != command.user {
+			if command.mode == 0 && w.user != command.user {
 				if job := w.inventoryJobs[0]; job != nil {
 					job.cancel()
 					w.inventoryJobs[0] = nil
@@ -253,6 +252,7 @@ func (w *workspace) commandDialog() {
 				w.lastRefresh[0] = time.Time{}
 				w.fleetHistory[0] = nil
 			}
+			w.enterMode(command.mode)
 			// An explicit target should not be hidden by a previous mode's filter.
 			w.quickFilter = 0
 			w.favoriteOnly = false

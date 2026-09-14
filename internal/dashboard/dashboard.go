@@ -203,6 +203,19 @@ func (w *workspace) chooseSort() {
 	w.choose("sort", " Sort workloads ", choices)
 }
 
+// enterMode records a mode change made by the command palette or another
+// route that bypasses switchMode. It recomputes the loading flag from the
+// new mode's own job and schedules inventory when none is due, so a job
+// still running for the previous mode cannot leave the new one marked as
+// loading with the refresh loop silently paused.
+func (w *workspace) enterMode(mode int) {
+	w.mode = mode
+	w.loading = w.inventoryJobs[mode] != nil && w.lastRefresh[mode].IsZero()
+	if w.lastRefresh[mode].IsZero() || time.Since(w.lastRefresh[mode]) >= time.Duration(w.settings.RefreshSeconds)*time.Second {
+		w.startInventory(mode)
+	}
+}
+
 func (w *workspace) switchMode(mode int) {
 	if mode == w.mode {
 		w.app.SetFocus(w.table)
@@ -521,20 +534,6 @@ func (w *workspace) styleNavigation() {
 	}
 }
 
-func meter(value, maximum float64, width int) string {
-	filled := 0
-	if maximum > 0 {
-		filled = int(value / maximum * float64(width))
-	}
-	if filled < 0 {
-		filled = 0
-	}
-	if filled > width {
-		filled = width
-	}
-	return strings.Repeat("━", filled) + strings.Repeat("·", width-filled)
-}
-
 func (w *workspace) updateDashboard() {
 	p := w.palette()
 	totals := fleetTotals(w.items[w.mode])
@@ -545,24 +544,9 @@ func (w *workspace) updateDashboard() {
 	if totals.memoryCount > 0 {
 		memory = fmt.Sprintf("%.1f MiB", totals.memory)
 	}
-	cpuHistory, memoryHistory := []float64{}, []float64{}
-	for _, sample := range w.fleetHistory[w.mode] {
-		c, m := -1.0, -1.0
-		if sample.cpuCount > 0 {
-			c = sample.cpu
-		}
-		if sample.memoryCount > 0 {
-			m = sample.memory
-		}
-		cpuHistory, memoryHistory = append(cpuHistory, c), append(memoryHistory, m)
-	}
 	chartWidth := max(1, w.lastWidth/4-2)
 	if w.lastWidth == 0 {
 		chartWidth = 24
-	}
-	if len(cpuHistory) > chartWidth {
-		cpuHistory = cpuHistory[len(cpuHistory)-chartWidth:]
-		memoryHistory = memoryHistory[len(memoryHistory)-chartWidth:]
 	}
 	// Host cards are drawn on a fixed 0–100 scale so the fill height always
 	// means the same share of the machine, whatever the recent range was.

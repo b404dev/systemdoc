@@ -273,15 +273,18 @@ func (r sysdigRunner) imagePresent(ctx context.Context) bool {
 // sudo relays it to sysdig, and the docker CLI proxies it into the container,
 // so the capture stops cleanly and prints its summary exactly as Ctrl-C
 // would; a stuck child is killed after a grace period. For the container the
-// named container is interrupted directly as well, so a killed CLI cannot
-// leave a privileged sysdig running.
+// named container is interrupted first, synchronously, so a killed CLI cannot
+// leave a privileged sysdig running: Wait does not return until Cancel has,
+// and quitting the workspace waits for the stream before exiting.
 func sysdigCommand(ctx context.Context, runner sysdigRunner, args []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, runner.argv[0], append(append([]string{}, runner.argv[1:]...), args...)...)
 	cmd.Cancel = func() error {
 		if runner.kind == "container" {
 			for i, arg := range runner.argv {
 				if arg == "--name" && i+1 < len(runner.argv) {
-					go exec.Command("docker", "kill", "--signal", "INT", runner.argv[i+1]).Run()
+					killCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
+					exec.CommandContext(killCtx, "docker", "kill", "--signal", "INT", runner.argv[i+1]).Run()
+					done()
 				}
 			}
 		}

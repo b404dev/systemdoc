@@ -132,6 +132,3 @@ func signalArea(values []float64, fixedMaximum float64, mode string) string {
 	}
 	return strings.TrimRight(rows[0].String(), " ") + "\n" + rows[1].String()
 }
-
-// sparkline remains the stable block-chart helper for reports and tests.
-func sparkline(values []float64) string { return signalChart(values, "blocks") }

@@ -21,13 +21,18 @@ type tailBuffer struct {
 	limit int
 }
 
+// outputLimit resolves a tailBuffer limit; zero means the default 1 MiB.
+func outputLimit(limit int) int {
+	if limit <= 0 {
+		return 1024 * 1024
+	}
+	return limit
+}
+
 func (b *tailBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	limit := b.limit
-	if limit <= 0 {
-		limit = 1024 * 1024
-	}
+	limit := outputLimit(b.limit)
 	n := len(p)
 	if n >= limit {
 		b.data = append(b.data[:0], p[n-limit:]...)
@@ -175,6 +180,9 @@ func (w *workspace) execute(target, name string, args []string) {
 		cmd := exec.CommandContext(ctx, name, args...)
 		cmd.Stdout = &output
 		cmd.Stderr = &output
+		// A cancelled docker/compose child may leave a plugin holding the pipe;
+		// without this Wait never returns and the operation slot stays taken.
+		cmd.WaitDelay = 3 * time.Second
 		done := make(chan error, 1)
 		go func() { done <- cmd.Run() }()
 		ticker := time.NewTicker(time.Second)

@@ -23,13 +23,26 @@ func parseLogTime(value string) (time.Time, error) {
 	if value == "" {
 		return time.Time{}, nil
 	}
-	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05-0700", "2006-01-02 15:04:05", "2006-01-02"} {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05-0700", "2006-01-02 15:04:05.999999-0700", "2006-01-02 15:04:05", "2006-01-02"} {
 		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
 			return parsed, nil
 		}
 	}
 	return time.Time{}, fmt.Errorf("use RFC3339 or local YYYY-MM-DD HH:MM:SS")
 }
+
+// logStampSource skips the `[pod/namespace/name/container] ` prefix that
+// kubectl logs --prefix puts before each timestamp, so time bounds apply to
+// pod lines as well as journal and Docker lines.
+func logStampSource(line string) string {
+	if strings.HasPrefix(line, "[pod/") {
+		if end := strings.Index(line, "] "); end > 0 {
+			return line[end+2:]
+		}
+	}
+	return line
+}
+
 func (o logSearchOptions) matcher() (func(string) bool, error) {
 	if o.Context < 0 || o.Context > 20 {
 		return nil, fmt.Errorf("context must be 0–20 lines")
@@ -64,7 +77,7 @@ func searchRetainedLogs(raw string, o logSearchOptions) (string, []int, error) {
 			continue
 		}
 		if !o.Since.IsZero() || !o.Until.IsZero() {
-			stamp := timestamp.FindString(line)
+			stamp := timestamp.FindString(logStampSource(line))
 			at, err := parseLogTime(stamp)
 			if err != nil || at.IsZero() || !o.Since.IsZero() && at.Before(o.Since) || !o.Until.IsZero() && at.After(o.Until) {
 				continue

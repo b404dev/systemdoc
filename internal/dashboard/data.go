@@ -34,17 +34,27 @@ func commandLimit(ctx context.Context, limit int, name string, args ...string) (
 }
 
 // runBounded is the one place subprocess output and duration are capped.
+// Standard output is returned on its own so JSON and table consumers never
+// see a tool's stderr warnings; on failure both streams are reported. The
+// wait delay bounds Wait when a grandchild keeps the pipes open after the
+// child was killed on timeout.
 func runBounded(ctx context.Context, timeout time.Duration, limit int, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	buffer := tailBuffer{limit: limit}
+	stdout, stderr := tailBuffer{limit: limit}, tailBuffer{limit: 64 * 1024}
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = &buffer
-	cmd.Stderr = &buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	cmd.WaitDelay = 2 * time.Second
 	err := cmd.Run()
-	output := buffer.String()
+	output := stdout.String()
 	if err != nil {
-		return output, fmt.Errorf("%s: %w\n%s", name, err, strings.TrimSpace(output))
+		diagnostics := strings.TrimSpace(stderr.String())
+		combined := output
+		if diagnostics != "" {
+			combined = strings.TrimRight(output, "\n") + "\n" + diagnostics
+		}
+		return combined, fmt.Errorf("%s: %w\n%s", name, err, strings.TrimSpace(combined))
 	}
 	return output, nil
 }

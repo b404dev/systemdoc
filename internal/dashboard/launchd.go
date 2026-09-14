@@ -284,13 +284,13 @@ func parseLaunchDisabled(raw string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Older launchctl prints true/false, newer releases print
+		// disabled/enabled. An unknown value drops that row, not the table.
 		switch value {
-		case "true":
+		case "true", "disabled":
 			result[id] = "disabled"
-		case "false":
+		case "false", "enabled":
 			result[id] = "enabled"
-		default:
-			return nil, fmt.Errorf("unrecognized disabled-services value")
 		}
 	}
 	return nil, fmt.Errorf("incomplete disabled-services table")
