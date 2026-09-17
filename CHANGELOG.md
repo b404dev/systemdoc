@@ -4,7 +4,11 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- CPU count and clock speed beside every host CPU figure. The masthead readout and the dashboard's HOST CPU card title name the machine's logical CPUs and the clock they are running at (`8 CPUs · 3.2 GHz`, or the spread when cores disagree) from 120 columns. The Process Explorer CPU card carries the same title from 100 columns and draws one bar per logical CPU at its own busy share beside the trend, coloured by the shared severity ramp, with the clock beneath; more CPUs than fit become a count of CPUs above 70%. The selected process's CPU gauge says how many logical CPUs its 100% is one of and what that share is of the whole machine.
+- Process Activity gains a `CPUs` line (the CPU the process last ran on, that CPU's clock and busy share, and its allowed CPU set, flagged when it is confined to fewer CPUs than the machine has) and a `Host` line with the inventory: logical CPUs, cores and threads, sockets, model, current clock, advertised range and the source of the clock reading. Each thread in the busiest-first table shows the CPU it last ran on. Its CPU share also states the equivalent share of the machine.
+- Linux reads the inventory once from `/proc/stat`, `/sys/devices/system/cpu/*/topology` and `/proc/cpuinfo`, and samples clocks every two seconds from cpufreq's `scaling_cur_freq`, falling back to `/proc/cpuinfo`'s `cpu MHz`, which is labelled nominal because virtual machines hold it fixed. Per-CPU busy shares come from the `cpuN` lines of `/proc/stat` over the same interval as the aggregate figure. macOS reads counts and the brand string from `sysctl`; Apple Silicon exposes no clock there, so none is shown.
 
 ## v0.2.0 - 2026-09-17
 

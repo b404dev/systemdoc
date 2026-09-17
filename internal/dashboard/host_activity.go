@@ -28,6 +28,8 @@ type threadSample struct {
 	TID         int
 	Name, State string
 	Ticks       uint64
+	// CPU is the logical CPU the thread last ran on (stat field 39).
+	CPU int
 }
 
 type activitySample struct {
@@ -50,6 +52,11 @@ type activitySample struct {
 	FDDeleted                      int
 	Executable, WorkingDir, Unit   string
 	Tasks                          []threadSample
+	// LastCPU is the logical CPU the main thread last ran on and CPUsAllowed
+	// the affinity mask as a list, so a process pinned or confined by a
+	// cgroup cpuset is seen as such rather than as one that will not spread.
+	LastCPU     int
+	CPUsAllowed string
 }
 
 // parseTaskStat reads one /proc/PID/stat or /proc/PID/task/TID/stat line. The
@@ -108,6 +115,8 @@ func parseProcStatus(raw string, sample *activitySample) {
 			sample.VoluntarySwitches = uint64(number())
 		case "nonvoluntary_ctxt_switches":
 			sample.Preemptions = uint64(number())
+		case "Cpus_allowed_list":
+			sample.CPUsAllowed = value
 		}
 	}
 }
@@ -189,6 +198,7 @@ func sampleProcessActivity(procRoot string, pid int) (activitySample, error) {
 	sample.UserTicks, sample.SystemTicks = statUint(fields, 14), statUint(fields, 15)
 	sample.Nice, sample.Threads = statInt(fields, 19), statInt(fields, 20)
 	sample.StartTime = statUint(fields, 22)
+	sample.LastCPU = statInt(fields, 39)
 	if raw, err := os.ReadFile(filepath.Join(dir, "status")); err == nil {
 		parseProcStatus(string(raw), &sample)
 	}
@@ -233,7 +243,7 @@ func sampleProcessActivity(procRoot string, pid int) (activitySample, error) {
 			if err != nil {
 				continue
 			}
-			sample.Tasks = append(sample.Tasks, threadSample{TID: tid, Name: name, State: fields[0], Ticks: statUint(fields, 14) + statUint(fields, 15)})
+			sample.Tasks = append(sample.Tasks, threadSample{TID: tid, Name: name, State: fields[0], Ticks: statUint(fields, 14) + statUint(fields, 15), CPU: statInt(fields, 39)})
 		}
 	}
 	return sample, nil
@@ -351,7 +361,7 @@ func stateWord(state string) string {
 
 // renderProcessActivity lays out one refresh of the view. Untrusted values
 // (command names, paths, journal lines) are escaped; colour tags are trusted.
-func renderProcessActivity(p palette, glyphs string, process hostProcess, previous, current *activitySample, history []float64, journal string, children []hostProcess, paused bool, note string) string {
+func renderProcessActivity(p palette, glyphs string, process hostProcess, previous, current *activitySample, history []float64, journal string, children []hostProcess, paused bool, note string, host hostUtilisation) string {
 	var out strings.Builder
 	hue := panelHue(p, 3)
 	title := strings.TrimSpace(process.Command)
@@ -385,11 +395,37 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 		stateHue = p.warning
 	}
 	field("State", fmt.Sprintf("[%s::b]%s[-::-]  %s", stateHue, tview.Escape(clean(stateWord(current.State))), muted(fmt.Sprintf("%d threads · nice %d", current.Threads, current.Nice))))
+	logical := host.cpus.logical
 	if rates.Valid {
 		cpuHue := pressureHue(p, int(rates.CPU))
-		field("CPU", fmt.Sprintf("[%s::b]%5.1f%%[-::-]  [%s]%s[-]  %s", cpuHue, rates.CPU, hue, signalChart(history, glyphs), muted(fmt.Sprintf("user %.1f%% · system %.1f%% · 100%% = one logical CPU", rates.UserCPU, rates.SystemCPU))))
+		scale := "100% = one logical CPU"
+		if logical > 1 {
+			scale = fmt.Sprintf("100%% = one of %d logical CPUs · %.1f%% of the machine", logical, rates.CPU/float64(logical))
+		}
+		field("CPU", fmt.Sprintf("[%s::b]%5.1f%%[-::-]  [%s]%s[-]  %s", cpuHue, rates.CPU, hue, signalChart(history, glyphs), muted(fmt.Sprintf("user %.1f%% · system %.1f%% · %s", rates.UserCPU, rates.SystemCPU, scale))))
 	} else {
 		field("CPU", muted("rates need a second sample · ps estimate "+fmt.Sprintf("%.1f%%", max(0, process.CPU))))
+	}
+	// Where the process runs, on what: the CPU it was last scheduled on and
+	// that CPU's clock and busy share, the set it is allowed to use, then the
+	// machine's own inventory so the shares above have a denominator.
+	placement := fmt.Sprintf("last on CPU %d", current.LastCPU)
+	if current.LastCPU >= 0 && current.LastCPU < len(host.clocks.mhz) && host.clocks.mhz[current.LastCPU] > 0 {
+		placement += " · " + formatClock(host.clocks.mhz[current.LastCPU])
+	}
+	if current.LastCPU >= 0 && current.LastCPU < len(host.coreBusy) && host.coreBusy[current.LastCPU] >= 0 {
+		placement += fmt.Sprintf(" · that CPU %.0f%% busy", host.coreBusy[current.LastCPU])
+	}
+	if current.CPUsAllowed != "" {
+		allowed := "allowed " + current.CPUsAllowed
+		if logical > 0 && cpuListCount(current.CPUsAllowed) < logical {
+			allowed = fmt.Sprintf("[%s]confined to CPUs %s[-]", p.warning, tview.Escape(clean(current.CPUsAllowed)))
+		}
+		placement += "  " + allowed
+	}
+	field("CPUs", placement)
+	if detail := cpuInventoryDetail(host); detail != "" {
+		field("Host", muted(detail))
 	}
 	memory := hostBytes(current.RSSKiB, true) + " RSS"
 	if current.SwapKiB > 0 {
@@ -477,7 +513,11 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 		if task.State == "D" {
 			stateHue = p.warning
 		}
-		fmt.Fprintf(&out, "  [%s]%-10d[-] %-20s [%s]%s[-]  %s\n", p.muted, task.TID, tview.Escape(clean(task.Name)), stateHue, task.State, cpu)
+		on := ""
+		if logical > 1 {
+			on = muted(fmt.Sprintf("  on CPU %d", task.CPU))
+		}
+		fmt.Fprintf(&out, "  [%s]%-10d[-] %-20s [%s]%s[-]  %s%s\n", p.muted, task.TID, tview.Escape(clean(task.Name)), stateHue, task.State, cpu, on)
 	}
 	if rates.Valid && len(tasks) > 0 {
 		fmt.Fprintf(&out, "  %s\n", muted(fmt.Sprintf("%d of %d threads used CPU in the last sample", busy, len(tasks))))
@@ -493,6 +533,31 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 	out.WriteString("\n\n")
 	fmt.Fprintf(&out, "[%s]Space pause · r sample now · T sysdig · f follow journal · K signals · n ports · s service · G graphics · Esc returns[-]\n", p.muted)
 	return out.String()
+}
+
+// cpuListCount sizes a kernel CPU list such as "0-3,8,10-11". An unparsable
+// list counts as covering everything, so nothing is called confined by
+// mistake.
+func cpuListCount(list string) int {
+	count := 0
+	for _, part := range strings.Split(strings.TrimSpace(list), ",") {
+		if part == "" {
+			continue
+		}
+		lo, hi, isRange := strings.Cut(part, "-")
+		start, err := strconv.Atoi(lo)
+		if err != nil {
+			return int(^uint(0) >> 1)
+		}
+		end := start
+		if isRange {
+			if end, err = strconv.Atoi(hi); err != nil || end < start {
+				return int(^uint(0) >> 1)
+			}
+		}
+		count += end - start + 1
+	}
+	return count
 }
 
 func shortCommand(command string) string {

@@ -25,6 +25,13 @@ type hostUtilisation struct {
 	swapUsed, swapTotal  int64 // bytes
 	swapOK               bool
 	pressure             hostPressure
+	// What the CPU figure is a share of: the machine's logical CPUs and
+	// cores, the clock each is running at right now, and each one's own busy
+	// share over the same interval as cpuPercent. coreBusy is nil until two
+	// samples exist or where /proc/stat carries no per-CPU lines.
+	cpus     cpuInventory
+	clocks   cpuClocks
+	coreBusy []float64
 }
 
 // hostPressure is the "some" 10-second average from /proc/pressure: the share
@@ -96,41 +103,80 @@ func parseSwap(raw string) (used, total int64, ok bool) {
 }
 
 // cpuTimes is one cumulative CPU accounting sample. A percentage needs two.
+// cores holds the same counters for each online logical CPU, indexed by its
+// cpuN number, so the per-core strip is measured over exactly the interval
+// the aggregate figure is.
 type cpuTimes struct {
 	busy, total uint64
 	ok          bool
+	cores       []coreTimes
 }
 
-// parseProcStat reads the aggregate "cpu" line of /proc/stat. Idle and iowait
-// are both non-busy time; every other column counts as busy. The guest and
-// guest_nice columns are already included in user and nice by the kernel, so
-// they are skipped rather than counted twice.
+type coreTimes struct {
+	busy, total uint64
+}
+
+// parseProcStat reads the aggregate "cpu" line of /proc/stat and the cpuN
+// lines beneath it. Idle and iowait are both non-busy time; every other
+// column counts as busy. The guest and guest_nice columns are already
+// included in user and nice by the kernel, so they are skipped rather than
+// counted twice. A malformed aggregate line rejects the sample; a malformed
+// per-CPU line only drops that CPU.
 func parseProcStat(raw string) cpuTimes {
+	sample := cpuTimes{}
+	cores := map[int]coreTimes{}
+	highest := -1
 	for _, line := range strings.Split(raw, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 5 || fields[0] != "cpu" {
+		if len(fields) < 5 || !strings.HasPrefix(fields[0], "cpu") {
 			continue
 		}
-		var total, idle uint64
-		for i, field := range fields[1:] {
-			value, err := strconv.ParseUint(field, 10, 64)
-			if err != nil {
+		busy, total, ok := procStatBusy(fields[1:])
+		if fields[0] == "cpu" {
+			if !ok {
 				return cpuTimes{}
 			}
-			if i >= 8 {
-				break
-			}
-			total += value
-			if i == 3 || i == 4 {
-				idle += value
-			}
+			sample.busy, sample.total, sample.ok = busy, total, true
+			continue
 		}
-		if total == 0 {
-			return cpuTimes{}
+		index, err := strconv.Atoi(fields[0][3:])
+		if err != nil || index < 0 || !ok {
+			continue
 		}
-		return cpuTimes{busy: total - idle, total: total, ok: true}
+		cores[index] = coreTimes{busy: busy, total: total}
+		highest = max(highest, index)
 	}
-	return cpuTimes{}
+	if !sample.ok {
+		return cpuTimes{}
+	}
+	if highest >= 0 {
+		sample.cores = make([]coreTimes, highest+1)
+		for index, core := range cores {
+			sample.cores[index] = core
+		}
+	}
+	return sample
+}
+
+func procStatBusy(fields []string) (busy, total uint64, ok bool) {
+	var idle uint64
+	for i, field := range fields {
+		value, err := strconv.ParseUint(field, 10, 64)
+		if err != nil {
+			return 0, 0, false
+		}
+		if i >= 8 {
+			break
+		}
+		total += value
+		if i == 3 || i == 4 {
+			idle += value
+		}
+	}
+	if total == 0 {
+		return 0, 0, false
+	}
+	return total - idle, total, true
 }
 
 // cpuPercent compares two cumulative samples. The counters only move forward,
@@ -249,7 +295,9 @@ func collectHostUtilisation(ctx context.Context, platform string, cores int, pre
 	if raw, err := os.ReadFile("/proc/stat"); err == nil {
 		current = parseProcStat(string(raw))
 		result.cpuPercent, result.cpuOK = cpuPercent(previous, current)
+		result.coreBusy = coreBusyShares(previous, current)
 	}
+	result.clocks = collectLinuxClocks("/proc", "/sys/devices/system/cpu", cores)
 	if raw, err := os.ReadFile("/proc/meminfo"); err == nil {
 		if used, total, ok := parseMeminfo(string(raw)); ok {
 			result.memUsed, result.memTotal, result.memOK = used, total, true
@@ -356,6 +404,16 @@ func collectDarwinUtilisation(ctx context.Context, cores int) hostUtilisation {
 	return result
 }
 
+// collectCPUInventory picks the platform reader. The fallback count is Go's
+// view of the schedulable CPUs, which is right whenever the kernel files are
+// unreadable.
+func collectCPUInventory(ctx context.Context, platform string, fallbackLogical int) (cpuInventory, cpuClocks) {
+	if platform == "darwin" {
+		return collectDarwinCPUInventory(ctx, fallbackLogical)
+	}
+	return collectLinuxCPUInventory("/proc", "/sys/devices/system/cpu", fallbackLogical), cpuClocks{}
+}
+
 // Reading /proc is cheap enough to sample often; the macOS path shells out, so
 // it samples less frequently. Neither cadence follows the inventory interval,
 // which keeps this loop off the settings the UI goroutine owns.
@@ -368,11 +426,18 @@ func hostSampleInterval() time.Duration {
 
 func (w *workspace) hostMetricsLoop(cores int) {
 	var previous cpuTimes
+	// The inventory is read once: counts and the advertised clock range do
+	// not move between samples, and on macOS each is a sysctl subprocess.
+	inventory, darwinClocks := collectCPUInventory(w.ctx, servicePlatform, cores)
 	ticker := time.NewTicker(hostSampleInterval())
 	defer ticker.Stop()
 	for {
 		usage, sample := collectHostUtilisation(w.ctx, servicePlatform, cores, previous)
 		previous = sample
+		usage.cpus = inventory
+		if servicePlatform == "darwin" {
+			usage.clocks = darwinClocks
+		}
 		w.queueQuiet(func() { w.recordHostUtilisation(usage) })
 		select {
 		case <-w.ctx.Done():

@@ -585,10 +585,17 @@ func (w *workspace) updateDashboard() {
 	}
 	activeVisual := signalArea(activeHistory, float64(max(1, len(w.items[w.mode]))), w.settings.GraphMode)
 	attentionVisual := signalArea(attentionHistory, float64(max(1, len(w.items[w.mode]))), w.settings.GraphMode)
+	// The card has three inner rows and the trend takes two, so the count and
+	// clock ride on the border as part of the title. A quarter-width card
+	// below 120 columns has no room for them.
+	cpuTitle := "HOST CPU "
+	if label := cpuInventoryLabel(w.hostUsage); label != "" && w.lastWidth >= 120 {
+		cpuTitle = "HOST CPU · " + label + " "
+	}
 	values := []struct{ title, colour, headline, visual string }{
 		{" " + w.iconLabel(iconHealthy, "ACTIVE · click to filter "), p.success, fmt.Sprintf("%d active · %s", totals.active, signalDelta(activeHistory)), activeVisual},
 		{" " + w.iconLabel(iconAttention, "ATTENTION · click to filter "), p.error, fmt.Sprintf("%d failed · %s", totals.attention, signalDelta(attentionHistory)), attentionVisual},
-		{" " + w.iconLabel(iconResources, "HOST CPU "), p.accent, severityHeadline(p, p.accent, hostCPUHeadline(w.hostUsage, cpu), w.hostUsage.cpuPercent, w.hostUsage.cpuOK), hostCPUTrend},
+		{" " + w.iconLabel(iconResources, cpuTitle), p.accent, severityHeadline(p, p.accent, hostCPUHeadline(w.hostUsage, cpu), w.hostUsage.cpuPercent, w.hostUsage.cpuOK), hostCPUTrend},
 		{" " + w.iconLabel(iconProcesses, "HOST MEMORY "), p.glow, severityHeadline(p, p.glow, hostMemoryHeadline(w.hostUsage, memory), w.hostUsage.memPercent, w.hostUsage.memOK), hostMemoryTrend},
 	}
 	for i, value := range values {

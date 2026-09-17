@@ -212,4 +212,14 @@ func TestHostReadoutHidesOnNarrowTerminals(t *testing.T) {
 	if got := hostReadoutFor(p, usage, 160); !strings.Contains(got, "CPU 40%") || !strings.Contains(got, "MEM 50%") {
 		t.Errorf("160 columns should carry the readout, got %q", got)
 	}
+	// The count and clock follow the CPU share from 120 columns and stay off
+	// a 100-column masthead, which is already full.
+	usage.cpus = cpuInventory{logical: 8, cores: 4, ok: true}
+	usage.clocks = cpuClocks{mhz: []float64{3200, 3200, 3200, 3200, 3200, 3200, 3200, 3200}, source: "cpufreq", ok: true}
+	if got := hostReadout(p, usage, 160); !strings.Contains(got, "CPU 40%") || !strings.Contains(got, "8 CPUs · 3.2 GHz") {
+		t.Errorf("wide readout should name the CPUs and clock, got %q", got)
+	}
+	if got := hostReadout(p, usage, 100); strings.Contains(got, "8 CPUs") {
+		t.Errorf("100-column readout should omit the inventory, got %q", got)
+	}
 }

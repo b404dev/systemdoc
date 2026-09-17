@@ -23,6 +23,21 @@ func TestTaskStatParsingKeepsCommandsWithSpacesAndParens(t *testing.T) {
 	}
 }
 
+// fakeStat builds a 52-field /proc/PID/stat line with the documented field
+// numbers: 14 utime, 15 stime, 20 threads, 22 starttime, 39 processor.
+func fakeStat(pid, comm, state, utime, stime, cpu string) string {
+	fields := make([]string, 53)
+	for i := range fields {
+		fields[i] = "0"
+	}
+	fields[3], fields[4], fields[5], fields[6], fields[8] = state, "1", "1", "1", "-1"
+	fields[10], fields[12] = "1000", "3"
+	fields[14], fields[15] = utime, stime
+	fields[18], fields[20], fields[22] = "20", "3", "5000"
+	fields[39] = cpu
+	return pid + " (" + comm + ") " + strings.Join(fields[3:], " ")
+}
+
 func writeFakeProcess(t *testing.T, root string, pid string, utime, stime, vol string, tasks map[string]string) {
 	t.Helper()
 	dir := filepath.Join(root, pid)
@@ -32,10 +47,10 @@ func writeFakeProcess(t *testing.T, root string, pid string, utime, stime, vol s
 	if err := os.MkdirAll(filepath.Join(dir, "fd"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stat := pid + " (fake daemon) S 1 1 1 0 -1 4194624 1000 0 3 0 " + utime + " " + stime + " 0 0 20 0 3 0 5000 1 2048 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 0 -1 0 0 0 0 0 0 0 0 0 0 0 0 0"
+	stat := fakeStat(pid, "fake daemon", "S", utime, stime, "2")
 	files := map[string]string{
 		"stat":   stat,
-		"status": "Name:\tfake daemon\nState:\tS (sleeping)\nVmRSS:\t   81804 kB\nVmSwap:\t    1024 kB\nThreads:\t3\nvoluntary_ctxt_switches:\t" + vol + "\nnonvoluntary_ctxt_switches:\t4\n",
+		"status": "Name:\tfake daemon\nState:\tS (sleeping)\nVmRSS:\t   81804 kB\nVmSwap:\t    1024 kB\nThreads:\t3\nCpus_allowed_list:\t0-3\nvoluntary_ctxt_switches:\t" + vol + "\nnonvoluntary_ctxt_switches:\t4\n",
 		"io":     "rchar: 5000\nwchar: 100\nsyscr: 9\nsyscw: 1\nread_bytes: 4096\nwrite_bytes: 8192\n",
 		"cgroup": "0::/system.slice/fake.service\n",
 	}
@@ -57,7 +72,11 @@ func writeFakeProcess(t *testing.T, root string, pid string, utime, stime, vol s
 		if tid == "4243" {
 			state = "R"
 		}
-		line := tid + " (worker-" + tid + ") " + state + " 1 1 1 0 -1 0 0 0 0 0 " + ticks + " 0 0 0 20 0 3 0 5000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+		cpu := "0"
+		if tid == "4243" {
+			cpu = "5"
+		}
+		line := fakeStat(tid, "worker-"+tid, state, ticks, "0", cpu)
 		if err := os.WriteFile(filepath.Join(dir, "task", tid, "stat"), []byte(line), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -79,6 +98,14 @@ func TestProcessActivitySamplesAFakeProcTree(t *testing.T) {
 	}
 	if first.Unit != "fake.service" || first.Executable != "/usr/bin/fake" || first.WorkingDir != "/srv/fake" || len(first.Tasks) != 3 {
 		t.Fatalf("identity: %+v", first)
+	}
+	if first.LastCPU != 2 || first.CPUsAllowed != "0-3" {
+		t.Fatalf("placement: last CPU %d allowed %q", first.LastCPU, first.CPUsAllowed)
+	}
+	for _, task := range first.Tasks {
+		if want := map[int]int{4243: 5}[task.TID]; task.CPU != want {
+			t.Fatalf("thread %d on CPU %d, want %d", task.TID, task.CPU, want)
+		}
 	}
 	// Two seconds later the process burned 150 ticks (1.5 CPU-seconds) and one thread did most of it.
 	writeFakeProcess(t, root, "4242", "200", "100", "1400", map[string]string{"4242": "110", "4243": "170", "4244": "10"})
@@ -106,7 +133,7 @@ func TestProcessActivitySamplesAFakeProcTree(t *testing.T) {
 		t.Fatal("missing process must report not-exist", err)
 	}
 	p := themes[0]
-	text := renderProcessActivity(p, "ascii", hostProcess{PID: 4242, User: "svc", Command: "/usr/bin/fake --serve"}, &first, &second, []float64{10, 75}, "2026-09-14T12:00:00+0100 host fake[4242]: listening", []hostProcess{{PID: 5000, Command: "/usr/bin/fake-child"}}, false, "")
+	text := renderProcessActivity(p, "ascii", hostProcess{PID: 4242, User: "svc", Command: "/usr/bin/fake --serve"}, &first, &second, []float64{10, 75}, "2026-09-14T12:00:00+0100 host fake[4242]: listening", []hostProcess{{PID: 5000, Command: "/usr/bin/fake-child"}}, false, "", hostUtilisation{})
 	for _, want := range []string{"fake daemon · /usr/bin/fake --serve", "sleeping · interruptible", "3 threads · nice 0", " 75.0%", "user 50.0% · system 25.0%", "79.9 MiB RSS · 1.0 MiB swapped", "voluntary 200/s · preempted 0.00/s", "read 2.0 KiB/s · write 4.0 KiB/s", "5 open", "1 sockets · 2 files · 1 pipes · 1 other", "1 deleted-but-open", "fake.service", "/usr/bin/fake", "/srv/fake", "5000 fake-child", "worker-4243", "65.0%", "2 of 3 threads used CPU", "listening", "_PID=4242"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q", want)
@@ -115,11 +142,11 @@ func TestProcessActivitySamplesAFakeProcTree(t *testing.T) {
 	if !strings.Contains(text, "4243") || strings.Index(text, "worker-4243") > strings.Index(text, "worker-4242") {
 		t.Fatal("busiest thread is not listed first")
 	}
-	initial := renderProcessActivity(p, "blocks", hostProcess{PID: 4242, CPU: 3.5}, nil, &first, nil, "reading journal…", nil, false, "")
+	initial := renderProcessActivity(p, "blocks", hostProcess{PID: 4242, CPU: 3.5}, nil, &first, nil, "reading journal…", nil, false, "", hostUtilisation{})
 	if !strings.Contains(initial, "rates need a second sample") || !strings.Contains(initial, "lifetime read 4.0 KiB") {
 		t.Fatal(initial)
 	}
-	exited := renderProcessActivity(p, "blocks", hostProcess{PID: 4242}, &first, &second, nil, "", nil, true, "The process has exited.")
+	exited := renderProcessActivity(p, "blocks", hostProcess{PID: 4242}, &first, &second, nil, "", nil, true, "The process has exited.", hostUtilisation{})
 	if !strings.Contains(exited, "The process has exited.") || !strings.Contains(exited, "PAUSED") {
 		t.Fatal(exited)
 	}
@@ -140,7 +167,7 @@ func TestProcessActivityReportsUnreadableCountersHonestly(t *testing.T) {
 	if note := permissionNote(os.ErrPermission, "I/O counters"); !strings.Contains(note, "another user") {
 		t.Fatal(note)
 	}
-	text := renderProcessActivity(themes[0], "blocks", hostProcess{PID: 77}, nil, &sample, nil, "no journal entries carry this PID", nil, false, "")
+	text := renderProcessActivity(themes[0], "blocks", hostProcess{PID: 77}, nil, &sample, nil, "no journal entries carry this PID", nil, false, "", hostUtilisation{})
 	if !strings.Contains(text, "I/O counters unavailable") || !strings.Contains(text, "open descriptors unavailable") || !strings.Contains(text, "no journal entries") {
 		t.Fatal(text)
 	}

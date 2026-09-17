@@ -97,6 +97,9 @@ type hostRow struct {
 type hostCard struct {
 	title, headline, visual, note string
 	chart                         bool
+	// aside is drawn to the right of a chart's two rows, already tagged, so
+	// a chart card can carry a second reading without a fourth row.
+	aside [2]string
 }
 type hostPage struct {
 	*tview.Flex
@@ -506,7 +509,7 @@ func (h *hostPage) render() {
 	if h.tab == 4 {
 		title = "Disk & storage"
 	}
-	h.header.SetText(h.w.masthead(title, "", hostReadout(p, h.w.hostUsage)+"   "+h.w.signalsHint(p), h.width, h.height))
+	h.header.SetText(h.w.masthead(title, "", hostReadout(p, h.w.hostUsage, h.width)+"   "+h.w.signalsHint(p), h.width, h.height))
 	// The suite's signature hue lights its frame, its selection band and its
 	// view rail, so each panel is recognisable before a word is read.
 	hue := panelHue(p, h.tab)
@@ -538,7 +541,12 @@ func (h *hostPage) render() {
 		colour := []string{hue, p.warning, p.success}[i]
 		h.cards[i].SetTitle(" " + c.title + " ").SetTitleColor(tcell.GetColor(colour))
 		if c.chart {
-			h.cards[i].SetText(fmt.Sprintf("[%s::b]%s[-::-]\n%s", colour, tview.Escape(c.headline), gradientText(c.visual, colour, p.accent)))
+			visual := gradientText(c.visual, colour, p.accent)
+			if c.aside[0] != "" || c.aside[1] != "" {
+				top, bottom, _ := strings.Cut(c.visual, "\n")
+				visual = gradientText(top, colour, p.accent) + "  " + c.aside[0] + "\n" + gradientText(bottom, colour, p.accent) + "  " + c.aside[1]
+			}
+			h.cards[i].SetText(fmt.Sprintf("[%s::b]%s[-::-]\n%s", colour, tview.Escape(c.headline), visual))
 			continue
 		}
 		h.cards[i].SetText(fmt.Sprintf("[%s::b]%s[-::-]\n%s\n[%s]%s[-]", colour, tview.Escape(c.headline), gradientText(c.visual, colour, p.accent), p.muted, tview.Escape(c.note)))
@@ -941,6 +949,8 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		parents[p.PID] = p.Command
 		children[p.PPID] = append(children[p.PPID], strconv.Itoa(p.PID))
 	}
+	usage := h.w.hostUsage
+	logical := usage.cpus.logical
 	for _, b := range branches {
 		p := b.Process
 		command := p.Command
@@ -957,7 +967,7 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 			cpuCell = cellGauge(cpuText, p.CPU, 100, 6, glyphs)
 		}
 		parent := parents[p.PPID]
-		rich := func() string { return processRich(pal, glyphs, hue, p, parent, memoryCeiling) }
+		rich := func() string { return processRich(pal, glyphs, hue, p, parent, memoryCeiling, logical) }
 		h.rows = append(h.rows, hostRow{key: strconv.Itoa(p.PID), cells: []string{command, cpuCell, hostBytes(p.RSS, true), strconv.Itoa(p.PID), p.User, p.State, strconv.Itoa(p.PPID), p.Elapsed}, detail: detail, rich: rich, tint: map[int]string{1: pressureHue(pal, int(max(0, p.CPU)))}, pid: p.PID, warning: strings.HasPrefix(p.State, "Z")})
 	}
 	mode := []string{"CPU", "MEMORY", "PID"}[h.sort]
@@ -973,9 +983,31 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 	if h.width > 0 {
 		chartWidth = max(8, h.width/3-8)
 	}
-	usage := h.w.hostUsage
+	// Beside the CPU trend, one bar per logical CPU at its own busy share and
+	// the clock line beneath it. The trend gives up columns for the strip only
+	// while at least twelve samples stay visible; past that the strip is
+	// replaced by a count of cores above the amber threshold.
+	memoryChartWidth := chartWidth
+	cpuTitle, cpuAside := "HOST CPU", [2]string{}
+	if label := cpuInventoryLabel(usage); label != "" && h.width >= 100 {
+		cpuTitle += " · " + label
+	}
+	if cores := len(usage.coreBusy); cores > 0 && h.width >= 100 {
+		clock := clockText(usage.clocks)
+		const legend = " per CPU"
+		asideWidth := max(cores+len(legend), displayWidth(clock))
+		if chartWidth-asideWidth-2 >= 12 {
+			chartWidth -= asideWidth + 2
+			cpuAside[0] = coreStrip(pal, usage.coreBusy, asideWidth, glyphs) + fmt.Sprintf("[%s]%s[-]", pal.muted, legend)
+			cpuAside[1] = fmt.Sprintf("[%s]%s[-]", pal.muted, tview.Escape(clock))
+		} else if summary := coreStripPlain(usage.coreBusy); summary != "" && chartWidth-displayWidth(summary)-2 >= 12 {
+			chartWidth -= displayWidth(summary) + 2
+			cpuAside[0] = fmt.Sprintf("[%s]%s[-]", pal.muted, tview.Escape(summary))
+			cpuAside[1] = fmt.Sprintf("[%s]%s[-]", pal.muted, tview.Escape(clock))
+		}
+	}
 	cpuTrend := signalArea(trimHistory(h.w.hostCPUHistory, chartWidth), 100, glyphs)
-	memoryTrend := signalArea(trimHistory(h.w.hostMemoryHistory, chartWidth), 100, glyphs)
+	memoryTrend := signalArea(trimHistory(h.w.hostMemoryHistory, memoryChartWidth), 100, glyphs)
 	cpuHeadline, memoryHeadline := "— host", "— host"
 	if usage.cpuOK {
 		cpuHeadline = fmt.Sprintf("%.0f%% host", usage.cpuPercent)
@@ -988,14 +1020,14 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 	}
 	return []string{"COMMAND", "CPU", "RSS", "PID", "USER", "STATE", "PPID", "ELAPSED"}, [3]hostCard{
 		{title: "PROCESSES", headline: fmt.Sprintf("%d observed", len(h.processes)), visual: signalMeter(float64(running), float64(len(h.processes)), 20, glyphs), note: fmt.Sprintf("%d on a CPU at sample · %d zombies%s", running, zombies, pressurePlain(usage.pressure))},
-		{title: "HOST CPU", headline: fmt.Sprintf("%s · %.1f%% summed", cpuHeadline, cpu), visual: cpuTrend, chart: true},
+		{title: cpuTitle, headline: fmt.Sprintf("%s · %.1f%% summed", cpuHeadline, cpu), visual: cpuTrend, chart: true, aside: cpuAside},
 		{title: "HOST MEMORY", headline: fmt.Sprintf("%s · %s RSS", memoryHeadline, hostBytes(rss, true)), visual: memoryTrend, chart: true},
 	}
 }
 
 // processRich is the selection band for one process: command, CPU and memory
 // gauges against the largest observed process, and identity on the last line.
-func processRich(pal palette, glyphs, hue string, p hostProcess, parent string, memoryCeiling int64) string {
+func processRich(pal palette, glyphs, hue string, p hostProcess, parent string, memoryCeiling int64, logical int) string {
 	cpuText := "—"
 	if p.CPU >= 0 {
 		cpuText = fmt.Sprintf("%.1f%%", p.CPU)
@@ -1011,7 +1043,13 @@ func processRich(pal palette, glyphs, hue string, p hostProcess, parent string, 
 	}
 	cpuGauge := fmt.Sprintf("[%s]CPU     no reading[-]", pal.muted)
 	if p.CPU >= 0 {
-		cpuGauge = gaugeLine("CPU", p.CPU, 100, 20, hueOf(pal, pressureHue(pal, int(p.CPU))), pal, glyphs, cpuText, "100% = one logical CPU")
+		// The share is of one logical CPU; naming how many the machine has
+		// says at a glance how much of the whole box that is.
+		scale := "100% = one logical CPU"
+		if logical > 1 {
+			scale = fmt.Sprintf("100%% = one of %d logical CPUs · %.1f%% of the machine", logical, p.CPU/float64(logical))
+		}
+		cpuGauge = gaugeLine("CPU", p.CPU, 100, 20, hueOf(pal, pressureHue(pal, int(p.CPU))), pal, glyphs, cpuText, scale)
 	}
 	memoryGauge := fmt.Sprintf("[%s]MEMORY  no reading[-]", pal.muted)
 	if p.RSS >= 0 && memoryCeiling > 0 {

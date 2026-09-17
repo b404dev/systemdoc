@@ -367,7 +367,7 @@ func (n *networkPage) recordRateHistory() {
 }
 func (n *networkPage) render() {
 	p := n.w.palette()
-	n.header.SetText(n.w.masthead("Host network", "", hostReadout(p, n.w.hostUsage)+"   "+n.w.signalsHint(p), n.lastWidth, n.lastHeight))
+	n.header.SetText(n.w.masthead("Host network", "", hostReadout(p, n.w.hostUsage, n.lastWidth)+"   "+n.w.signalsHint(p), n.lastWidth, n.lastHeight))
 	for i, button := range n.modeButtons {
 		fg, bg := p.muted, p.background
 		if i == 2 {

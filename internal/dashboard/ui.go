@@ -311,7 +311,7 @@ func (w *workspace) updateHeader() {
 		sampled = "sample " + w.lastRefresh[w.mode].Format("15:04:05")
 	}
 	detail := fmt.Sprintf("[%s]%d workloads · %d active · %s[-]   %s   [%s]x %s CONSTELLATION[-]  [%s]I %s STORYLINE[-]  %s",
-		p.muted, len(w.items[w.mode]), totals.active, sampled, hostReadout(p, w.hostUsage), p.glow, w.icon(iconConstellation), p.warning, w.icon(iconStoryline), w.signalsHint(p))
+		p.muted, len(w.items[w.mode]), totals.active, sampled, hostReadout(p, w.hostUsage, w.lastWidth), p.glow, w.icon(iconConstellation), p.warning, w.icon(iconStoryline), w.signalsHint(p))
 	w.header.SetText(w.masthead(contextLabel, fmt.Sprintf("[%s::b]%s[-::-]", healthColour, health), detail, w.lastWidth, w.lastHeight))
 }
 
@@ -367,10 +367,13 @@ func hostReadoutFor(p palette, usage hostUtilisation, width int) string {
 	if width > 0 && width < 100 {
 		return ""
 	}
-	return "   " + hostReadout(p, usage)
+	return "   " + hostReadout(p, usage, width)
 }
 
-func hostReadout(p palette, usage hostUtilisation) string {
+// hostReadout is the one-line host figure set. From 120 columns the CPU
+// share is followed by what it is a share of: the logical CPU count and the
+// clock they are running at, muted so the percentages stay the subject.
+func hostReadout(p palette, usage hostUtilisation, width int) string {
 	// Each figure takes the severity ramp, so the masthead answers "is the
 	// machine under pressure" before the number is read. A missing reading
 	// stays muted rather than borrowing a colour that means something.
@@ -381,7 +384,11 @@ func hostReadout(p palette, usage hostUtilisation) string {
 	if usage.memOK {
 		memory, memoryHue = fmt.Sprintf("%.0f%%", usage.memPercent), pressureHue(p, int(usage.memPercent))
 	}
-	readout := fmt.Sprintf("[%s]HOST[-] [%s::b]CPU %s[-::-] [%s]·[-] [%s::b]MEM %s[-::-]", p.muted, cpuHue, cpu, p.muted, memoryHue, memory)
+	readout := fmt.Sprintf("[%s]HOST[-] [%s::b]CPU %s[-::-]", p.muted, cpuHue, cpu)
+	if label := cpuInventoryLabel(usage); label != "" && (width == 0 || width >= 120) {
+		readout += fmt.Sprintf(" [%s]%s[-]", p.muted, tview.Escape(label))
+	}
+	readout += fmt.Sprintf(" [%s]·[-] [%s::b]MEM %s[-::-]", p.muted, memoryHue, memory)
 	if usage.loadOK {
 		readout += fmt.Sprintf(" [%s]·[-] [%s::b]LOAD %.2f[-::-]", p.muted, p.text, usage.load1)
 	}

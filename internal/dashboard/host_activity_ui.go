@@ -80,7 +80,7 @@ func (a *activityView) children() []hostProcess {
 
 func (a *activityView) render() {
 	row, col := a.view.GetScrollOffset()
-	a.view.SetText(renderProcessActivity(a.h.w.palette(), a.h.w.settings.GraphMode, a.process, a.previous, a.current, a.history, a.journal, a.children(), a.paused.Load(), a.note))
+	a.view.SetText(renderProcessActivity(a.h.w.palette(), a.h.w.settings.GraphMode, a.process, a.previous, a.current, a.history, a.journal, a.children(), a.paused.Load(), a.note, a.h.w.hostUsage))
 	a.view.ScrollTo(row, col)
 }
 
