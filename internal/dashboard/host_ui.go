@@ -319,9 +319,12 @@ func (w *workspace) hostPage(tab int) {
 
 func (h *hostPage) close() { h.cancel(); h.w.pages.RemovePage(h.name); h.w.app.SetFocus(h.w.table) }
 
+// pollSeconds floors the two whole-host walks at 15 s: the ps snapshot and the
+// lsof scan of every open descriptor, which is the heaviest command the tool
+// runs. Mount usage is cheap and keeps the configured interval.
 func (h *hostPage) pollSeconds() int {
 	seconds := h.w.settings.RefreshSeconds
-	if h.tab == 3 && seconds < 15 {
+	if (h.tab == 3 || h.deletedView) && seconds < 15 {
 		return 15
 	}
 	return seconds
@@ -724,7 +727,7 @@ func processTargetError(p hostProcess) error {
 	case p.PID <= 1:
 		return fmt.Errorf("PID %d is protected", p.PID)
 	case p.PID == os.Getpid():
-		return fmt.Errorf("Systemdoc cannot signal itself")
+		return fmt.Errorf("this process is Systemdoc itself and will not be signalled")
 	case strings.TrimSpace(p.Command) == "":
 		return fmt.Errorf("the selected process has no command identity")
 	}

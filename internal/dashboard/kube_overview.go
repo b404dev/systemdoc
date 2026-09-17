@@ -118,7 +118,7 @@ func decodePod(raw string) (kubePod, error) {
 		return pod, fmt.Errorf("decode Kubernetes pod: %w", err)
 	}
 	if pod.Metadata.Name == "" {
-		return pod, fmt.Errorf("Kubernetes pod inspection did not return a pod")
+		return pod, fmt.Errorf("the Kubernetes pod inspection did not return a pod")
 	}
 	return pod, nil
 }

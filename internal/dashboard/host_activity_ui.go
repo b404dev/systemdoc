@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -22,10 +23,11 @@ type activityView struct {
 	first             *activitySample
 	history           []float64
 	journal           string
-	paused            bool
-	note              string
-	ticks             int
-	focus             tview.Primitive
+	// paused is read by the sampling goroutine and toggled on the UI goroutine.
+	paused atomic.Bool
+	note   string
+	ticks  int
+	focus  tview.Primitive
 }
 
 // openProcessActivity replaces the static record with a live view for the
@@ -78,7 +80,7 @@ func (a *activityView) children() []hostProcess {
 
 func (a *activityView) render() {
 	row, col := a.view.GetScrollOffset()
-	a.view.SetText(renderProcessActivity(a.h.w.palette(), a.h.w.settings.GraphMode, a.process, a.previous, a.current, a.history, a.journal, a.children(), a.paused, a.note))
+	a.view.SetText(renderProcessActivity(a.h.w.palette(), a.h.w.settings.GraphMode, a.process, a.previous, a.current, a.history, a.journal, a.children(), a.paused.Load(), a.note))
 	a.view.ScrollTo(row, col)
 }
 
@@ -93,7 +95,7 @@ func (a *activityView) loop() {
 		case <-a.ctx.Done():
 			return
 		case <-ticker.C:
-			if a.paused {
+			if a.paused.Load() {
 				continue
 			}
 			a.ticks++
@@ -152,7 +154,7 @@ func (a *activityView) input(e *tcell.EventKey) *tcell.EventKey {
 	case e.Key() == tcell.KeyEscape:
 		a.close()
 	case e.Rune() == ' ':
-		a.paused = !a.paused
+		a.paused.Store(!a.paused.Load())
 		a.render()
 	case e.Rune() == 'r':
 		go a.sample(true)

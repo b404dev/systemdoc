@@ -283,7 +283,7 @@ func describeKubeNodes(raw string, stack *kubeStack) error {
 		return fmt.Errorf("decode Kubernetes node list: %w", err)
 	}
 	if len(list.Items) == 0 {
-		return fmt.Errorf("Kubernetes API answered but reported no nodes")
+		return fmt.Errorf("the Kubernetes API answered but reported no nodes")
 	}
 	stack.nodes = len(list.Items)
 	stack.distro = "kubernetes"

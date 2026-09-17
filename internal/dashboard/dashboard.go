@@ -11,7 +11,7 @@ import (
 	"github.com/rivo/tview"
 )
 
-var tabNames = []string{"Overview", "Logs", "Config", "Resources", "Dependencies"}
+var tabNames = []string{"Overview", "Logs", "Config", "Metrics", "Dependencies"}
 
 func (w *workspace) inspectorTabName() string {
 	if w.mode == 0 && usesLaunchd() && w.tab == 4 {
@@ -544,7 +544,10 @@ func (w *workspace) updateDashboard() {
 	if totals.memoryCount > 0 {
 		memory = fmt.Sprintf("%.1f MiB", totals.memory)
 	}
-	chartWidth := max(1, w.lastWidth/4-2)
+	// Each card takes a quarter of the width and its rail frame keeps two
+	// cells on either side, so the trail must fit width/4-4 or the newest
+	// samples, the ones on the right, are clipped off the card.
+	chartWidth := max(1, w.lastWidth/4-4)
 	if w.lastWidth == 0 {
 		chartWidth = 24
 	}
@@ -645,7 +648,8 @@ func (w *workspace) updateSelectionCard() {
 	}
 	trend := "collecting workload history"
 	if len(history) >= 2 {
-		trend = fmt.Sprintf("CPU %s  %s   MEM %s  %s", signalChart(cpuHistory, w.settings.GraphMode), signalDelta(cpuHistory), signalChart(memoryHistory, w.settings.GraphMode), signalDelta(memoryHistory))
+		width := w.selectionChartWidth()
+		trend = fmt.Sprintf("CPU %s  %s   MEM %s  %s", signalChart(trimHistory(cpuHistory, width), w.settings.GraphMode), signalDelta(cpuHistory), signalChart(trimHistory(memoryHistory, width), w.settings.GraphMode), signalDelta(memoryHistory))
 	}
 	// The workload's CPU share takes the severity ramp; memory has no honest
 	// per-workload ceiling to grade against, so it stays in the identity hue.
@@ -654,6 +658,19 @@ func (w *workspace) updateSelectionCard() {
 		cpuHue = pressureHue(p, int(cpuShare))
 	}
 	w.selectionCard.SetText(fmt.Sprintf(" [%s::b]%s %s[-::-]  [%s]%s[-]  [%s]CPU[-] [%s::b]%s[-::-]  [%s]MEM[-] %s\n [%s]%s[-]", stateColour(item, p), stateSymbol(item, w.settings.NerdIcons), tview.Escape(clean(state)), p.muted, tview.Escape(clean(context)), p.muted, cpuHue, tview.Escape(available(item.CPU)), p.muted, tview.Escape(available(item.Memory)), p.muted, tview.Escape(trend)))
+}
+
+// selectionChartWidth is how many samples fit on the identity band's trend
+// line once its labels and deltas have taken their share. Without the trim
+// the full 60-sample history overran the band and the memory trail was
+// never visible.
+func (w *workspace) selectionChartWidth() int {
+	width := w.lastWidth
+	if w.zoom != 2 && (w.settings.Layout == "side-by-side" || (w.settings.Layout != "stacked" && width >= 110)) {
+		width = width * (100 - w.settings.PaneRatio) / 100
+	}
+	// " CPU " + delta + "   MEM " + delta is about 34 cells; the rail frame takes 4.
+	return max(4, (width-38)/2)
 }
 
 // severityHeadline colours the leading host figure by the severity ramp and

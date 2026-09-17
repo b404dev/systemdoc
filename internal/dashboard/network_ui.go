@@ -340,6 +340,17 @@ func appendSignal(history []float64, value float64) []float64 {
 
 func (n *networkPage) recordRateHistory() {
 	download, upload := 0.0, 0.0
+	// Docker's veth names come and go with every container, so a trail whose
+	// interface has vanished is dropped rather than kept for the session.
+	present := make(map[string]bool, len(n.rates))
+	for _, rate := range n.rates {
+		present[rate.Name] = true
+	}
+	for name := range n.rateHistory {
+		if !present[name] {
+			delete(n.rateHistory, name)
+		}
+	}
 	for _, rate := range n.rates {
 		if !rate.Ready {
 			continue

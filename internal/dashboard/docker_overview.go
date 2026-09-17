@@ -63,7 +63,7 @@ func dockerOverview(raw string, connectionsOnly bool) (string, error) {
 		return "", fmt.Errorf("decode Docker container inspection: %w", err)
 	}
 	if len(rows) != 1 || rows[0].ID == "" {
-		return "", fmt.Errorf("Docker inspection did not return exactly one container")
+		return "", fmt.Errorf("the Docker inspection did not return exactly one container")
 	}
 	c := rows[0]
 	var out strings.Builder

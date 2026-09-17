@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -137,6 +138,7 @@ func (w *workspace) publishInventory(mode int, items []workload, complete bool) 
 		}
 	}
 	w.recordChanges(mode, w.items[mode], items)
+	w.pruneHistories(mode, w.items[mode], items)
 	w.items[mode] = items
 	if complete {
 		w.sampleWorkloads(mode, items)
@@ -156,6 +158,24 @@ func (w *workspace) publishInventory(mode int, items []workload, complete bool) 
 		w.refreshDetail = true
 		w.showDetail()
 		w.refreshDetail = false
+	}
+}
+
+// pruneHistories drops the trend and metric histories of workloads that have
+// left the inventory. Container IDs and pod names churn on every restart, so
+// without this a long session keeps one 60-sample trail for every ID it has
+// ever seen.
+func (w *workspace) pruneHistories(mode int, previous, current []workload) {
+	present := make(map[string]bool, len(current))
+	for _, item := range current {
+		present[item.ID] = true
+	}
+	for _, item := range previous {
+		if present[item.ID] {
+			continue
+		}
+		delete(w.workloadHistory, fmt.Sprintf("%d/%t/%s", mode, w.user, item.ID))
+		delete(w.metrics, fmt.Sprintf("%t/%s", w.user, item.ID))
 	}
 }
 

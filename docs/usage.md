@@ -77,7 +77,7 @@ Press `z` to expand the focused pane. An expanded workload list reveals boot/sub
 | 3 | Ports and networking |
 | 4 | [Process Explorer](host-panels.md) |
 | 5 | [Disk & Storage](host-panels.md) |
-| F9 / K | Open reviewed signal actions for the selected process in Process Explorer |
+| F9 / K / Delete | Open reviewed signal actions for the selected process in Process Explorer |
 | / | Inventory filter |
 | , | Change live polling interval |
 | Arrows or j/k | Navigate |
@@ -90,7 +90,7 @@ Press `z` to expand the focused pane. An expanded workload list reveals boot/sub
 | L | Toggle independent live log drawer |
 | x / I | Open selected workload Constellation / suite-wide incident Storyline |
 | G | Cycle block, braille and ASCII signal graphics |
-| o / l / c / r / d | Overview / logs / config / resources / dependencies (containers and pods: connections) |
+| o / l / c / r / d | Overview / logs / config / metrics / dependencies (containers and pods: connections) |
 | R | Review restart of selected workload |
 | a | Searchable actions; type to filter, Down enters results |
 | : | Supported native-style commands with completion and session history |
@@ -99,7 +99,7 @@ Press `z` to expand the focused pane. An expanded workload list reveals boot/sub
 | f / F | Toggle favourite / show favourites only |
 | P | Pause/resume inventory refresh |
 | Space / g | Pause/resume log follow |
-| s | Network speed view; elsewhere, search/filter the focused live logs |
+| s | Network speed view (l / c / i open ports, connections and interfaces); elsewhere, search/filter the focused live logs |
 | V | Save, open, replace or delete workspace views |
 | T | Browse systemd timers in system/user scope |
 | E | Collect, review and export a troubleshooting snapshot |

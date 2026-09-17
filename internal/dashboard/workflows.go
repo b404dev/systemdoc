@@ -178,13 +178,14 @@ func (w *workspace) actions() {
 		}
 		if !usesLaunchd() {
 			add("Edit unit override", "Open systemctl edit in your editor; existing authorization applies", func() {
-				args := []string{"edit", item.ID}
+				if item.ID == "" || strings.HasPrefix(item.ID, "-") {
+					return
+				}
+				args := []string{"edit", "--", item.ID}
 				if w.user {
 					args = append([]string{"--user"}, args...)
 				}
-				if item.ID != "" {
-					w.native("systemctl", args...)
-				}
+				w.confirm("edit · "+item.Name, "systemctl "+strings.Join(args, " ")+"\n\nSuspends the workspace and opens the override in $SYSTEMD_EDITOR or $EDITOR. Saving installs a drop-in and reloads the manager.", func() { w.native("systemctl", args...) })
 			})
 			add("Follow journal", "Stream the unit's journal live in the Logs tab", func() { w.selectTab(1) })
 		}
@@ -196,14 +197,17 @@ func (w *workspace) actions() {
 		namespace, name := podRef(item)
 		argv := kubeArgv()
 		add("Pod shell", "Open /bin/sh in the pod's default container with kubectl exec", func() {
-			w.native(argv[0], append(append([]string{}, argv[1:]...), "exec", "-it", "--namespace", namespace, name, "--", "/bin/sh")...)
+			args := append(append([]string{}, argv[1:]...), "exec", "-it", "--namespace", namespace, name, "--", "/bin/sh")
+			w.confirm("shell · "+item.Name, argv[0]+" "+strings.Join(args, " ")+"\n\nSuspends the workspace and attaches an interactive shell inside the pod. Exit the shell to return.", func() { w.native(argv[0], args...) })
 		})
 		add("Follow logs", "Stream every container's log live in the Logs tab", func() { w.selectTab(1) })
 	} else if w.mode == 1 {
 		add("Container shell", "Open /bin/sh in selected container", func() {
-			if item.ID != "" {
-				w.native("docker", "exec", "-it", item.ID, "/bin/sh")
+			if item.ID == "" || strings.HasPrefix(item.ID, "-") {
+				return
 			}
+			args := []string{"exec", "-it", item.ID, "/bin/sh"}
+			w.confirm("shell · "+item.Name, "docker "+strings.Join(args, " ")+"\n\nSuspends the workspace and attaches an interactive shell inside the container. Exit the shell to return.", func() { w.native("docker", args...) })
 		})
 		add("Follow logs", "Stream the container's log live in the Logs tab", func() { w.selectTab(1) })
 	}

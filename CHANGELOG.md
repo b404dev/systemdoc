@@ -6,6 +6,16 @@ Changes are recorded here before being assigned a release tag.
 
 ### Fixes
 
+- The host and network command runner now sets a wait delay, so an `lsof` helper child holding the pipe after a timeout can no longer leave a page's busy flag stuck and stop it refreshing for the rest of the session.
+- Telemetry card trails were drawn two cells wider than the card's inner area, clipping the newest samples on the right; the selected-workload band drew its full 60-sample CPU and memory history into a band that fits about a quarter of it, so the memory trail was usually invisible. Both now fit their panels.
+- Per-workload trend and metric histories, and per-interface throughput trails, are dropped when the workload or interface leaves the inventory. Container IDs, pod names and Docker `veth` names churn, and a long session kept a trail for every ID it had ever seen.
+- Two data races: the Process Activity pause flag was read by the sampler goroutine while the key handler wrote it, and the Constellation goroutine read settings the preferences dialog can write.
+- Edit unit override, Pod shell and Container shell now show the exact command on the approval card before suspending the workspace, like every other action; `systemctl edit` also gains the `--` separator and leading-dash guard the other systemctl verbs already had.
+- The approval card accepts `y` only after it has been drawn once, so a key typed while a card is still being prepared cannot approve it unseen.
+- The `lsof` scan behind Deleted but open has the same 15-second floor as the process snapshot; it was the heaviest command in the tool and the only host view polling at the base interval.
+- sysdig probes run in their own process group and are interrupted, then reaped, as a group, so a root `sysdig` that misses the interrupt cannot outlive the panel that started it.
+- The `r` inspector tab is named Metrics everywhere; the Delete key and the Network page's `l` / `c` / `i` view keys are documented; the README no longer says resource totals ignore whole-host usage.
+- CI no longer runs the test suite twice per platform. It gains gofmt and staticcheck, a govulncheck pass, a one-iteration benchmark smoke and a build against the Go 1.23 floor declared in go.mod.
 - Blocky gradients over SSH. sshd forwards `TERM` but not `COLORTERM`, so a 24-bit terminal looked like 256 colours on the remote host and every blend snapped to palette blocks. `--ssh` now forwards the local terminal's colour capability as `COLORTERM=truecolor`. When a terminal really is limited to 256 colours, panels take a single flat tint instead of a gradient and the status line says `256 colours`; the troubleshooting guide covers manual SSH sessions and tmux.
 
 ## v0.1.1 - 2026-09-14

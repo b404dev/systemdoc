@@ -77,7 +77,7 @@ The suites share one visual language, polling interval, keyboard model, theme sy
 | `3` | Ports and networking |
 | `4` | Process Explorer |
 | `5` | Disk & Storage |
-| `F9` / `K` | Review signals for the selected process (Process Explorer) |
+| `F9` / `K` / `Delete` | Review signals for the selected process (Process Explorer) |
 | `/` | Filter the inventory |
 | `,` | Change the live polling interval |
 | `Enter` / `Tab` | Inspect / move between panes |
@@ -136,7 +136,7 @@ Try the optional [container playground](playground/README.md) for a small, real 
 
 ## Project status
 
-Systemdoc v0.1.0 is the first public release. macOS support is implemented and cross-built; live Mac verification remains a release requirement. Implemented features are described in the user guide; known limits and manual test gaps are recorded in [troubleshooting](docs/troubleshooting.md) and [the release guide](docs/releasing.md). Inventory uses CLI polling, and activity history is session-local. Resource totals describe reporting workloads, not whole-host usage.
+Systemdoc is in its first public releases. macOS support is implemented and cross-built; live Mac verification remains a release requirement. Implemented features are described in the user guide; known limits and manual test gaps are recorded in [troubleshooting](docs/troubleshooting.md) and [the release guide](docs/releasing.md). Inventory uses CLI polling, and activity history is session-local. Host CPU and memory are read from the machine itself; the tracked workload sums shown beside them describe only the workloads that report figures.
 
 [Architecture](SPEC.md) · [Visual system](VISUAL-DESIGN.md) · [Changelog](CHANGELOG.md)
 

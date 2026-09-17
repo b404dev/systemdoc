@@ -39,7 +39,7 @@ func projectArgs(p project, verb string) ([]string, error) {
 	args := []string{"compose", "--project-name", p.Name, "--project-directory", p.Directory}
 	for _, file := range p.Files {
 		if !filepath.IsAbs(file) {
-			return nil, fmt.Errorf("Compose path must be absolute")
+			return nil, fmt.Errorf("the Compose path must be absolute")
 		}
 		if _, err := os.Stat(file); err != nil {
 			return nil, err

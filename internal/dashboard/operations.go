@@ -128,6 +128,14 @@ func (w *workspace) confirm(title, detail string, run func()) {
 		"[" + p.muted + "]Nothing runs until you approve.  y approve · Esc cancel · Tab actions[-]")
 	close := func() { w.pages.RemovePage("confirm"); w.app.SetFocus(focus) }
 	accept := func() { close(); run() }
+	// Several confirms open after background work finishes. A y typed while
+	// waiting must not approve a card the reader has not seen yet, so the key
+	// is live only after the card has been drawn once.
+	shown := false
+	view.SetDrawFunc(func(_ tcell.Screen, x, y, width, height int) (int, int, int, int) {
+		shown = true
+		return x, y, width, height
+	})
 	buttons := tview.NewForm().
 		AddButton(w.iconLabel(iconApprove, "Approve & run"), accept).
 		AddButton(w.iconLabel(iconCancel, "Cancel"), close).
@@ -152,7 +160,9 @@ func (w *workspace) confirm(title, detail string, run func()) {
 			return nil
 		}
 		if e.Rune() == 'y' || e.Rune() == 'Y' {
-			accept()
+			if shown {
+				accept()
+			}
 			return nil
 		}
 		return e

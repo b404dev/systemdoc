@@ -23,4 +23,28 @@ jobs:
       - name: Read-only launchd smoke test
         if: runner.os == 'macOS'
         run: SYSTEMDOC_LIVE_LAUNCHD=1 go test ./internal/dashboard -run '^TestLiveLaunchdReadOnly$' -count=1
-      - run: make cross
+      - run: make bench-smoke
+      - if: runner.os == 'Linux'
+        run: make cross
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: make lint
+  # go.mod declares 1.23 as the floor; build and test against it so a newer
+  # language feature cannot slip in unnoticed.
+  floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - run: go build ./... && go test ./...

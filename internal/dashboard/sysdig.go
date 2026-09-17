@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -278,6 +279,9 @@ func (r sysdigRunner) imagePresent(ctx context.Context) bool {
 // and quitting the workspace waits for the stream before exiting.
 func sysdigCommand(ctx context.Context, runner sysdigRunner, args []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, runner.argv[0], append(append([]string{}, runner.argv[1:]...), args...)...)
+	// Own process group: the interrupt reaches sysdig as well as the sudo or
+	// docker front end, and reapGroup can kill a sysdig that outlived them.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if runner.kind == "container" {
 			for i, arg := range runner.argv {
@@ -288,10 +292,23 @@ func sysdigCommand(ctx context.Context, runner sysdigRunner, args []string) *exe
 				}
 			}
 		}
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err == nil {
+			return nil
+		}
 		return cmd.Process.Signal(os.Interrupt)
 	}
 	cmd.WaitDelay = 3 * time.Second
 	return cmd
+}
+
+// reapGroup is called after Wait has returned. The front end is gone by then;
+// a root sysdig that ignored the interrupt is still in the group, and this
+// ends it so a closed panel never leaves a capture running.
+func reapGroup(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid || cmd.Process == nil {
+		return
+	}
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 }
 
 // collectSysdig runs a timed probe to completion. The window plus a grace
@@ -303,6 +320,7 @@ func collectSysdig(ctx context.Context, runner sysdigRunner, probe sysdigProbe, 
 	cmd := sysdigCommand(ctx, runner, args)
 	cmd.Stdout, cmd.Stderr = &output, &output
 	err := cmd.Run()
+	reapGroup(cmd)
 	text := output.String()
 	if err != nil && strings.Contains(text, "password is required") {
 		return text, fmt.Errorf("sudo authorization expired · run the probe again to authenticate")
@@ -346,6 +364,7 @@ func streamCommand(ctx context.Context, cmd *exec.Cmd, name string, update func(
 	for {
 		select {
 		case err := <-done:
+			reapGroup(cmd)
 			text := output.String()
 			ending := "\n[" + name + " stopped]"
 			if ctx.Err() == nil && err != nil {

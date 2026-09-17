@@ -84,7 +84,7 @@ func (w *workspace) constellation() {
 		return event
 	})
 	w.pages.AddPage("constellation", centered(view, 124, 34), true, true)
-	mode, user := w.mode, w.user
+	mode, user, nerd := w.mode, w.user, w.settings.NerdIcons
 	go func() {
 		// Reuse the existing relationship collector. It is invoked only for this lens.
 		raw, err := inspect(ctx, mode, user, item, 4)
@@ -94,7 +94,7 @@ func (w *workspace) constellation() {
 		if err != nil {
 			raw = "relationship lookup failed: " + err.Error()
 		}
-		content := constellationText(item, mode, raw, w.settings.NerdIcons)
+		content := constellationText(item, mode, raw, nerd)
 		w.queue(func() {
 			if ctx.Err() == nil {
 				view.SetText(richOutput(content, 4, w.palette()))

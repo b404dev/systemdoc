@@ -261,6 +261,10 @@ func networkCommand(ctx context.Context, name string, args ...string) (string, s
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	cmd.Stdout = &output
 	cmd.Stderr = &diagnostic
+	// lsof forks a helper child; if it keeps the pipe open after the parent is
+	// killed on timeout, Wait must still return or the page's busy flag never
+	// clears and it stops refreshing for the rest of the session.
+	cmd.WaitDelay = 2 * time.Second
 	err := cmd.Run()
 	if output.overflow || diagnostic.overflow {
 		return "", "", fmt.Errorf("%s output exceeded 4 MiB; snapshot was not used", name)
