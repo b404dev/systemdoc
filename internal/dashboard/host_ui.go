@@ -850,7 +850,13 @@ func (h *hostPage) updateStatus() {
 	}
 	note := "Host only · permissions may hide details"
 	if h.tab == 3 {
-		note += " · ps CPU is an OS estimate; RSS may include shared pages"
+		note += " · ps CPU is a lifetime average; RSS may include shared pages"
+		for _, process := range h.processes {
+			if process.RateCPU {
+				note = strings.Replace(note, "ps CPU is a lifetime average", "CPU is the rate since the previous snapshot", 1)
+				break
+			}
+		}
 	} else if h.deletedView {
 		note += " · file sizes are logical, not reclaimable disk blocks"
 	} else {
@@ -973,12 +979,15 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 	cpuHeadline, memoryHeadline := "— host", "— host"
 	if usage.cpuOK {
 		cpuHeadline = fmt.Sprintf("%.0f%% host", usage.cpuPercent)
+		if usage.loadOK {
+			cpuHeadline += fmt.Sprintf(" · load %.2f", usage.load1)
+		}
 	}
 	if usage.memOK {
 		memoryHeadline = fmt.Sprintf("%.0f%% host · %s", usage.memPercent, hostBytesPair(usage.memUsed, usage.memTotal))
 	}
 	return []string{"COMMAND", "CPU", "RSS", "PID", "USER", "STATE", "PPID", "ELAPSED"}, [3]hostCard{
-		{title: "PROCESSES", headline: fmt.Sprintf("%d observed", len(h.processes)), visual: signalMeter(float64(running), float64(len(h.processes)), 20, glyphs), note: fmt.Sprintf("%d on a CPU at sample · %d zombies", running, zombies)},
+		{title: "PROCESSES", headline: fmt.Sprintf("%d observed", len(h.processes)), visual: signalMeter(float64(running), float64(len(h.processes)), 20, glyphs), note: fmt.Sprintf("%d on a CPU at sample · %d zombies%s", running, zombies, pressurePlain(usage.pressure))},
 		{title: "HOST CPU", headline: fmt.Sprintf("%s · %.1f%% summed", cpuHeadline, cpu), visual: cpuTrend, chart: true},
 		{title: "HOST MEMORY", headline: fmt.Sprintf("%s · %s RSS", memoryHeadline, hostBytes(rss, true)), visual: memoryTrend, chart: true},
 	}

@@ -52,7 +52,7 @@ func (w *workspace) syncLogDrawer() {
 	}
 	ctx, cancel := context.WithCancel(w.ctx)
 	w.drawerCancel = cancel
-	generation, mode, user := w.drawerGeneration, w.mode, w.user
+	generation, mode, user, filter := w.drawerGeneration, w.mode, w.user, w.logFilter
 	w.drawerPaused = false
 	w.logDrawer.SetTitle(" LOGS · " + tview.Escape(clean(item.Name)) + " · L closes ")
 	w.logDrawer.SetText(" Connecting to log stream…")
@@ -62,7 +62,7 @@ func (w *workspace) syncLogDrawer() {
 			return
 		case <-time.After(120 * time.Millisecond):
 		}
-		followLogs(ctx, mode, user, item, func(text, final string) {
+		followLogsWith(ctx, mode, user, item, filter, func(text, final string) {
 			snapshot := prepareLogSnapshot(text, final, *w.drawerLogStyle.Load())
 			if ctx.Err() != nil {
 				return

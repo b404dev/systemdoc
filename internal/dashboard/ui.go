@@ -82,12 +82,14 @@ type workspace struct {
 	lastRefresh                 [2]time.Time
 	backendError                [2]bool
 	// inventoryNote names an accounting source that failed on the last poll.
-	inventoryNote   [2]string
-	body            *tview.Flex
-	inspector       *tview.Flex
-	favoriteOnly    bool
-	logPaused       bool
-	logQuery        string
+	inventoryNote [2]string
+	body          *tview.Flex
+	inspector     *tview.Flex
+	favoriteOnly  bool
+	logPaused     bool
+	logQuery      string
+	// logFilter narrows journal streams in the Logs tab and drawer.
+	logFilter       logFilter
 	paused          bool
 	metrics         map[string][]metricSample
 	activity        []activityEvent
@@ -607,7 +609,7 @@ func (w *workspace) showDetail() {
 	if tab == 1 {
 		w.inspectorLog = logSnapshot{}
 		w.logPaused = false
-		go w.streamLogs(ctx, mode, user, selected, generation)
+		go w.streamLogs(ctx, mode, user, selected, w.logFilter, generation)
 		return
 	}
 	w.detailPending = true

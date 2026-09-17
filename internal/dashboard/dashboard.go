@@ -26,7 +26,30 @@ func (w *workspace) inspectorTabName() string {
 		}
 		return "Inspect JSON"
 	}
+	if w.tab == 1 && w.mode == 0 && !usesLaunchd() {
+		if label := w.logFilter.label(); label != "" {
+			return "Logs · " + label
+		}
+	}
 	return tabNames[w.tab]
+}
+
+// toggleLogFilter flips one journal filter and restarts any stream showing
+// it, so the Logs tab and the drawer never show a mix of filtered and
+// unfiltered lines.
+func (w *workspace) toggleLogFilter(errorsOnly bool) {
+	if errorsOnly {
+		w.logFilter.errorsOnly = !w.logFilter.errorsOnly
+	} else {
+		w.logFilter.sinceBoot = !w.logFilter.sinceBoot
+	}
+	if w.tab == 1 {
+		w.showDetail()
+	}
+	if w.drawerOpen {
+		w.drawerKey = ""
+		w.syncLogDrawer()
+	}
 }
 
 var quickFilterNames = []string{"All states", "Active", "Needs attention"}

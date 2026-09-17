@@ -18,7 +18,7 @@ Process Explorer takes a full host process snapshot with `ps`. To prevent short 
 
 Press `G` to cycle the shared block, braille and ASCII signal style used by Process Explorer and Storage pressure meters. The choice is saved for every suite.
 
-The two resource cards plot the machine's own recent CPU and memory utilisation on a fixed 0-100% scale, beside the summed `ps` figures. The chart is a real series sampled independently of the process snapshot; the summed figures are a single snapshot, and the card names both so they are not read as one measurement. The selection band below the table shows the selected process's CPU and resident memory as gauges, with its state, elapsed time and parent.
+The two resource cards plot the machine's own recent CPU and memory utilisation on a fixed 0-100% scale, beside the summed `ps` figures; the CPU card also carries the one-minute load average, and the Processes card adds a `stall` reading from the kernel's pressure accounting when tasks have been waiting on CPU, memory or I/O. The chart is a real series sampled independently of the process snapshot; the summed figures are a single snapshot, and the card names both so they are not read as one measurement. The selection band below the table shows the selected process's CPU and resident memory as gauges, with its state, elapsed time and parent.
 
 The process table shows full command lines, CPU estimate, resident memory (RSS), PID, user, state, parent PID and elapsed time. Narrow terminals keep the primary columns.
 

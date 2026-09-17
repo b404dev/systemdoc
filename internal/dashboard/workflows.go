@@ -198,6 +198,15 @@ func (w *workspace) actions() {
 				w.confirm("edit · "+item.Name, "systemctl "+strings.Join(args, " ")+"\n\nSuspends the workspace and opens the override in $SYSTEMD_EDITOR or $EDITOR. Saving installs a drop-in and reloads the manager.", func() { w.native("systemctl", args...) })
 			})
 			add("Follow journal", "Stream the unit's journal live in the Logs tab", func() { w.selectTab(1) })
+			errorsState, bootState := "off", "off"
+			if w.logFilter.errorsOnly {
+				errorsState = "on"
+			}
+			if w.logFilter.sinceBoot {
+				bootState = "on"
+			}
+			add("Journal: errors and worse only · "+errorsState, "Toggle journalctl --priority 0..3 for the Logs tab and drawer", func() { w.toggleLogFilter(true) })
+			add("Journal: since this boot · "+bootState, "Toggle journalctl --boot so older boots are left out", func() { w.toggleLogFilter(false) })
 		}
 	}
 	if w.mode == 1 && item.ID != "" {

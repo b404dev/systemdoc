@@ -8,6 +8,8 @@ Changes are recorded here before being assigned a release tag.
 
 - Host signals beside the percentages: the CPU card carries the one-minute load average, the memory card names swap in use, and the masthead adds a `STALL` reading from `/proc/pressure` when tasks have waited on CPU, memory or I/O for more than 5% of the last ten seconds.
 - The bulk `systemctl show` now also samples MainPID, restarts, tasks, peak memory and cumulative I/O. The selected-service band shows the restart count whenever the manager has restarted the unit, and the Metrics tab is filled from that sample instead of running `systemctl show` for the selected unit on every poll. The container Metrics tab likewise reuses the `docker stats` line that fills the list.
+- Journal filters for systemd units, from Actions: errors and worse only (`journalctl --priority 0..3`) and since this boot (`--boot`). They apply to the Logs tab and the log drawer together, the tab title names the active filter, and toggling restarts the stream.
+- The Process Explorer status line says whether CPU is the rate since the previous snapshot (Linux) or the `ps` lifetime average (macOS); its CPU card carries the load average and its Processes card the stall reading.
 - The Network page's Connections card counts flows by state, most common first, so `TIME-WAIT` and `CLOSE-WAIT` build-ups are visible without scrolling.
 - When an accounting command fails (`systemctl show`, `docker stats`, `kubectl top`) the summary line says `accounting unavailable` and names it; blank resource columns are no longer silent.
 

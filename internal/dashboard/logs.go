@@ -11,13 +11,13 @@ import (
 	"github.com/rivo/tview"
 )
 
-func (w *workspace) streamLogs(ctx context.Context, mode int, user bool, item workload, generation int) {
+func (w *workspace) streamLogs(ctx context.Context, mode int, user bool, item workload, filter logFilter, generation int) {
 	select {
 	case <-ctx.Done():
 		return
 	case <-time.After(120 * time.Millisecond):
 	}
-	followLogs(ctx, mode, user, item, func(text, final string) {
+	followLogsWith(ctx, mode, user, item, filter, func(text, final string) {
 		snapshot := prepareLogSnapshot(text, final, *w.inspectorLogStyle.Load())
 		if ctx.Err() != nil {
 			return
@@ -32,9 +32,43 @@ func (w *workspace) streamLogs(ctx context.Context, mode int, user bool, item wo
 	})
 }
 
+// logFilter narrows a journal stream. It applies to journalctl only: Docker,
+// kubectl and the macOS log command have no priority field to filter on.
+type logFilter struct {
+	errorsOnly, sinceBoot bool
+}
+
+// journalArgs is the filter's contribution to a journalctl invocation.
+func (f logFilter) journalArgs() []string {
+	var args []string
+	if f.errorsOnly {
+		args = append(args, "--priority", "0..3")
+	}
+	if f.sinceBoot {
+		args = append(args, "--boot")
+	}
+	return args
+}
+
+// label names the active filter for a tab title; empty when nothing is set.
+func (f logFilter) label() string {
+	parts := []string{}
+	if f.errorsOnly {
+		parts = append(parts, "errors and worse")
+	}
+	if f.sinceBoot {
+		parts = append(parts, "this boot")
+	}
+	return strings.Join(parts, " · ")
+}
+
 // followLogs batches bounded CLI output; callers choose how to display it.
 func followLogs(ctx context.Context, mode int, user bool, item workload, update func(string, string)) {
-	name, args := "journalctl", []string{"--unit", item.ID, "--follow", "--lines", "150", "--no-pager", "--output=short-iso"}
+	followLogsWith(ctx, mode, user, item, logFilter{}, update)
+}
+
+func followLogsWith(ctx context.Context, mode int, user bool, item workload, filter logFilter, update func(string, string)) {
+	name, args := "journalctl", append([]string{"--unit", item.ID, "--follow", "--lines", "150", "--no-pager", "--output=short-iso"}, filter.journalArgs()...)
 	if mode == 1 && isPod(item) {
 		argv := kubeArgv()
 		name = argv[0]

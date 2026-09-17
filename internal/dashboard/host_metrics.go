@@ -283,6 +283,26 @@ func readPressure(dir string) hostPressure {
 	return result
 }
 
+// pressurePlain is the escaped-text form of the stall reading for card notes.
+func pressurePlain(pressure hostPressure) string {
+	if !pressure.ok {
+		return ""
+	}
+	parts := []string{}
+	for _, axis := range []struct {
+		name  string
+		value float64
+	}{{"cpu", pressure.cpu}, {"mem", pressure.memory}, {"io", pressure.io}} {
+		if axis.value >= 5 {
+			parts = append(parts, axis.name+" "+strconv.FormatFloat(axis.value, 'f', 0, 64)+"%")
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " · stall " + strings.Join(parts, " ")
+}
+
 // pressureSignal names the stalled resources worth a glance: below 5% the
 // kernel is merely busy, from 5% tasks are waiting, from 25% they are
 // waiting often enough to explain slowness.
