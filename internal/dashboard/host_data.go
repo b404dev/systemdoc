@@ -25,6 +25,10 @@ type hostProcess struct {
 	// previous poll and this one (Linux /proc sampling). When false, CPU is the
 	// ps pcpu value: total CPU time divided by the process's lifetime.
 	RateCPU bool
+	// LastCPU is the logical CPU the process was last scheduled on, from
+	// /proc/PID/stat on Linux; -1 where that is not read (macOS, vanished
+	// PIDs). It says where the process ran, not where it is allowed to.
+	LastCPU int
 }
 
 // joinNote concatenates the non-empty diagnostics with the status separator.
@@ -106,7 +110,7 @@ func parseProcessesTolerant(raw string) (rows []hostProcess, skipped int, err er
 			continue
 		}
 		seen[pid] = true
-		rows = append(rows, hostProcess{PID: pid, PPID: ppid, User: f[2], State: f[5], Elapsed: f[6], Command: clean(command), CPU: cpu, RSS: rss})
+		rows = append(rows, hostProcess{PID: pid, PPID: ppid, User: f[2], State: f[5], Elapsed: f[6], Command: clean(command), CPU: cpu, RSS: rss, LastCPU: -1})
 	}
 	return rows, skipped, allRowsFailed(len(rows), skipped, "ps rows")
 }
@@ -167,6 +171,7 @@ func (s *processCPUSampler) apply(rows []hostProcess, now time.Time) {
 		}
 		current := processCPUSample{ticks: statUint(fields, 14) + statUint(fields, 15), start: statUint(fields, 22), at: now}
 		next[rows[i].PID] = current
+		rows[i].LastCPU = statInt(fields, 39)
 		previous, ok := s.samples[rows[i].PID]
 		if !ok || previous.start != current.start || !now.After(previous.at) || current.ticks < previous.ticks {
 			continue

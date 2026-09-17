@@ -425,6 +425,8 @@ func (h *hostPage) input(e *tcell.EventKey) *tcell.EventKey {
 		if h.tab == 3 {
 			h.sysdigForProcess()
 		}
+	case 'c':
+		w.openCPUCores(func() []hostProcess { return h.processes })
 	case 'e':
 		w.reviewSnapshot(h.report())
 	case 'j':
@@ -600,7 +602,7 @@ func (h *hostPage) render() {
 
 // numericColumn names the table columns whose values are figures, so they are
 // right-aligned and read as a column of numbers rather than ragged text.
-var numericColumn = map[string]bool{"RSS": true, "PID": true, "PPID": true, "ELAPSED": true, "AVAILABLE": true, "SIZE": true, "USED SPACE": true, "INODES": true, "UID": true, "FD": true}
+var numericColumn = map[string]bool{"RSS": true, "PID": true, "ON": true, "PPID": true, "ELAPSED": true, "AVAILABLE": true, "SIZE": true, "USED SPACE": true, "INODES": true, "UID": true, "FD": true}
 
 func (h *hostPage) selectRow(row int) {
 	previous := h.selected
@@ -961,21 +963,27 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		if p.CPU >= 0 {
 			cpuText = fmt.Sprintf("%.1f%%", p.CPU)
 		}
-		detail := fmt.Sprintf("PID %d · %s · %s\nCPU %s · RSS %s · elapsed %s\nParent %d · %s\nChildren: %s\nCommand: %s\n\nEnter live activity (threads, switches, I/O, files, journal) · T sysdig runtime tracing · K process actions · n ports · s service (current scope). Signals require review and PID identity validation.", p.PID, p.User, p.State, cpuText, hostBytes(p.RSS, true), p.Elapsed, p.PPID, available(parents[p.PPID]), available(strings.Join(children[p.PID], ", ")), p.Command)
+		onCPU := "—"
+		if p.LastCPU >= 0 {
+			onCPU = strconv.Itoa(p.LastCPU)
+			cpuText += " · last on CPU " + onCPU
+		}
+		detail := fmt.Sprintf("PID %d · %s · %s\nCPU %s · RSS %s · elapsed %s\nParent %d · %s\nChildren: %s\nCommand: %s\n\nEnter live activity (threads, switches, I/O, files, journal) · c CPU cores · T sysdig runtime tracing · K process actions · n ports · s service (current scope). Signals require review and PID identity validation.", p.PID, p.User, p.State, cpuText, hostBytes(p.RSS, true), p.Elapsed, p.PPID, available(parents[p.PPID]), available(strings.Join(children[p.PID], ", ")), p.Command)
+		cpuText, _, _ = strings.Cut(cpuText, " · ")
 		cpuCell := cpuText
 		if h.width >= 100 && p.CPU >= 0 {
 			cpuCell = cellGauge(cpuText, p.CPU, 100, 6, glyphs)
 		}
 		parent := parents[p.PPID]
 		rich := func() string { return processRich(pal, glyphs, hue, p, parent, memoryCeiling, logical) }
-		h.rows = append(h.rows, hostRow{key: strconv.Itoa(p.PID), cells: []string{command, cpuCell, hostBytes(p.RSS, true), strconv.Itoa(p.PID), p.User, p.State, strconv.Itoa(p.PPID), p.Elapsed}, detail: detail, rich: rich, tint: map[int]string{1: pressureHue(pal, int(max(0, p.CPU)))}, pid: p.PID, warning: strings.HasPrefix(p.State, "Z")})
+		h.rows = append(h.rows, hostRow{key: strconv.Itoa(p.PID), cells: []string{command, cpuCell, hostBytes(p.RSS, true), strconv.Itoa(p.PID), onCPU, p.User, p.State, strconv.Itoa(p.PPID), p.Elapsed}, detail: detail, rich: rich, tint: map[int]string{1: pressureHue(pal, int(max(0, p.CPU)))}, pid: p.PID, warning: strings.HasPrefix(p.State, "Z")})
 	}
 	mode := []string{"CPU", "MEMORY", "PID"}[h.sort]
 	if h.tree {
 		mode = "PARENT TREE"
 	}
-	h.table.SetTitle(" PROCESSES · " + mode + " · F9/K signal · S sort ")
-	h.footer.SetText(" Enter activity · F9/K signals · T sysdig · / filter · S sort · f flat · t tree · n ports · s service · G graphics · r refresh · P pause · e export · Esc back")
+	h.table.SetTitle(" PROCESSES · " + mode + " · F9/K signal · S sort · c CPU cores ")
+	h.footer.SetText(" Enter activity · c CPU cores · F9/K signals · T sysdig · / filter · S sort · f flat · t tree · n ports · s service · G graphics · r refresh · P pause · e export · Esc back")
 	// The two resource cards plot the machine's own recent utilisation, which
 	// is a real series; the summed ps figures beside them are a snapshot and
 	// are named as such so the two are never read as the same measurement.
@@ -991,7 +999,10 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 	cpuTitle, cpuAside := "HOST CPU", [2]string{}
 	if label := cpuInventoryLabel(usage); label != "" && h.width >= 100 {
 		cpuTitle += " · " + label
+	} else if count := cpuCountText(usage.cpus, false); count != "" {
+		cpuTitle += " · " + count
 	}
+	cpuTitle += " · c cores"
 	if cores := len(usage.coreBusy); cores > 0 && h.width >= 100 {
 		clock := clockText(usage.clocks)
 		const legend = " per CPU"
@@ -1018,7 +1029,7 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 	if usage.memOK {
 		memoryHeadline = fmt.Sprintf("%.0f%% host · %s", usage.memPercent, hostBytesPair(usage.memUsed, usage.memTotal))
 	}
-	return []string{"COMMAND", "CPU", "RSS", "PID", "USER", "STATE", "PPID", "ELAPSED"}, [3]hostCard{
+	return []string{"COMMAND", "CPU", "RSS", "PID", "ON", "USER", "STATE", "PPID", "ELAPSED"}, [3]hostCard{
 		{title: "PROCESSES", headline: fmt.Sprintf("%d observed", len(h.processes)), visual: signalMeter(float64(running), float64(len(h.processes)), 20, glyphs), note: fmt.Sprintf("%d on a CPU at sample · %d zombies%s", running, zombies, pressurePlain(usage.pressure))},
 		{title: cpuTitle, headline: fmt.Sprintf("%s · %.1f%% summed", cpuHeadline, cpu), visual: cpuTrend, chart: true, aside: cpuAside},
 		{title: "HOST MEMORY", headline: fmt.Sprintf("%s · %s RSS", memoryHeadline, hostBytes(rss, true)), visual: memoryTrend, chart: true},

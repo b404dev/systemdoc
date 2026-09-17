@@ -95,7 +95,8 @@ func TestProcessCPUSamplerTurnsTicksIntoIntervalRates(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, pid), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		line := pid + " (fake daemon) S 1 1 1 0 -1 4194624 1000 0 3 0 " + utime + " " + stime + " 0 0 20 0 3 0 " + start + " 1 2048 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 0 -1 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
+		// Field 39, the CPU last run on, is 3 here.
+		line := pid + " (fake daemon) S 1 1 1 0 -1 4194624 1000 0 3 0 " + utime + " " + stime + " 0 0 20 0 3 0 " + start + " 1 2048 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
 		if err := os.WriteFile(filepath.Join(root, pid, "stat"), []byte(line), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -104,10 +105,15 @@ func TestProcessCPUSamplerTurnsTicksIntoIntervalRates(t *testing.T) {
 	write("200", "10", "10", "7000")
 	sampler := newProcessCPUSampler(root)
 	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	rows := []hostProcess{{PID: 100, CPU: 7}, {PID: 200, CPU: 1}, {PID: 300, CPU: 2}}
+	rows := []hostProcess{{PID: 100, CPU: 7, LastCPU: -1}, {PID: 200, CPU: 1, LastCPU: -1}, {PID: 300, CPU: 2, LastCPU: -1}}
 	sampler.apply(rows, t0)
 	if rows[0].CPU != 7 || rows[0].RateCPU || rows[1].CPU != 1 || rows[2].CPU != 2 || rows[2].RateCPU {
 		t.Fatalf("first sample must keep the ps estimate: %+v", rows)
+	}
+	// The CPU a process last ran on is read from the first sample already;
+	// an unreadable PID keeps the unknown marker.
+	if rows[0].LastCPU != 3 || rows[1].LastCPU != 3 || rows[2].LastCPU != -1 {
+		t.Fatalf("last CPU: %+v", rows)
 	}
 	if len(sampler.samples) != 2 {
 		t.Fatalf("unreadable PID 300 must not be remembered: %+v", sampler.samples)

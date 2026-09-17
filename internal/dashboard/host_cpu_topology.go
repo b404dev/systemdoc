@@ -19,6 +19,18 @@ type cpuInventory struct {
 	model                   string
 	minMHz, maxMHz          float64
 	ok                      bool
+	// coreOf and socketOf map each logical CPU number to its physical core
+	// and package id; -1 where the kernel did not say.
+	coreOf, socketOf []int
+}
+
+// coreLabel names the core and socket a logical CPU sits on, or "" when the
+// topology is unknown.
+func (inv cpuInventory) coreLabel(cpu int) (core, socket string) {
+	if cpu < 0 || cpu >= len(inv.coreOf) || inv.coreOf[cpu] < 0 {
+		return "", ""
+	}
+	return strconv.Itoa(inv.coreOf[cpu]), strconv.Itoa(inv.socketOf[cpu])
 }
 
 // cpuClocks is the per-sample frequency reading: one current clock per
@@ -96,6 +108,16 @@ func parseCPUInfo(raw string) (inventory cpuInventory, clocks cpuClocks) {
 	inventory.sockets = len(sockets)
 	if len(cores) > 0 {
 		inventory.cores = len(cores)
+		inventory.coreOf, inventory.socketOf = make([]int, len(blocks)), make([]int, len(blocks))
+		for i, b := range blocks {
+			inventory.coreOf[i], inventory.socketOf[i] = -1, -1
+			if core, err := strconv.Atoi(b.core); err == nil {
+				inventory.coreOf[i] = core
+			}
+			if pkg, err := strconv.Atoi(b.pkg); err == nil {
+				inventory.socketOf[i] = pkg
+			}
+		}
 	}
 	clocks.mhz = make([]float64, len(blocks))
 	for i, b := range blocks {
@@ -144,9 +166,17 @@ func readSysfsInt(path string) (int64, bool) {
 // sysfsTopology counts distinct (package, core) pairs and packages from the
 // topology directory. It is more reliable than /proc/cpuinfo on ARM, where
 // the core id lines are usually absent.
-func sysfsTopology(root string) (cores, sockets int, ok bool) {
+func sysfsTopology(root string) (cores, sockets int, coreOf, socketOf []int, ok bool) {
 	pairs, packages := map[string]bool{}, map[int64]bool{}
-	for _, id := range sysfsCPUs(root) {
+	ids := sysfsCPUs(root)
+	if len(ids) == 0 {
+		return 0, 0, nil, nil, false
+	}
+	coreOf, socketOf = make([]int, ids[len(ids)-1]+1), make([]int, ids[len(ids)-1]+1)
+	for i := range coreOf {
+		coreOf[i], socketOf[i] = -1, -1
+	}
+	for _, id := range ids {
 		dir := filepath.Join(root, "cpu"+strconv.Itoa(id), "topology")
 		core, coreOK := readSysfsInt(filepath.Join(dir, "core_id"))
 		pkg, pkgOK := readSysfsInt(filepath.Join(dir, "physical_package_id"))
@@ -155,11 +185,12 @@ func sysfsTopology(root string) (cores, sockets int, ok bool) {
 		}
 		pairs[strconv.FormatInt(pkg, 10)+"/"+strconv.FormatInt(core, 10)] = true
 		packages[pkg] = true
+		coreOf[id], socketOf[id] = int(core), int(pkg)
 	}
 	if len(pairs) == 0 {
-		return 0, 0, false
+		return 0, 0, nil, nil, false
 	}
-	return len(pairs), len(packages), true
+	return len(pairs), len(packages), coreOf, socketOf, true
 }
 
 // sysfsClockRange reads the hardware clock limits cpufreq advertises for the
@@ -219,8 +250,8 @@ func collectLinuxCPUInventory(procRoot, sysRoot string, fallbackLogical int) cpu
 	if inventory.logical <= 0 && fallbackLogical > 0 {
 		inventory.logical, inventory.ok = fallbackLogical, true
 	}
-	if cores, sockets, ok := sysfsTopology(sysRoot); ok {
-		inventory.cores, inventory.sockets = cores, sockets
+	if cores, sockets, coreOf, socketOf, ok := sysfsTopology(sysRoot); ok {
+		inventory.cores, inventory.sockets, inventory.coreOf, inventory.socketOf = cores, sockets, coreOf, socketOf
 	}
 	if lo, hi, ok := sysfsClockRange(sysRoot); ok {
 		inventory.minMHz, inventory.maxMHz = lo, hi
@@ -302,6 +333,30 @@ func coreBusyShares(previous, current cpuTimes) []float64 {
 		return nil
 	}
 	return shares
+}
+
+// coreLoadShares splits each CPU's interval the way coreBusyShares does, so
+// the cores view can say whether a busy CPU is running user code, the
+// kernel, or a hypervisor's other guests, and whether an idle one is waiting
+// on I/O.
+func coreLoadShares(previous, current cpuTimes) []coreLoad {
+	if !previous.ok || !current.ok || len(current.cores) == 0 {
+		return nil
+	}
+	loads := make([]coreLoad, len(current.cores))
+	for i, now := range current.cores {
+		if i >= len(previous.cores) {
+			continue
+		}
+		before := previous.cores[i]
+		if now.total <= before.total || now.busy < before.busy || now.user < before.user || now.system < before.system || now.iowait < before.iowait || now.steal < before.steal {
+			continue
+		}
+		elapsed := float64(now.total - before.total)
+		share := func(a, b uint64) float64 { return max(0, min(100, float64(b-a)/elapsed*100)) }
+		loads[i] = coreLoad{user: share(before.user, now.user), system: share(before.system, now.system), iowait: share(before.iowait, now.iowait), steal: share(before.steal, now.steal), ok: true}
+	}
+	return loads
 }
 
 // clockSummary reduces the per-core clocks to the figures a headline can

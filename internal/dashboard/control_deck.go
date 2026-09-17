@@ -25,7 +25,7 @@ func (w *workspace) controlDeck() {
 		},
 		{
 			"04  " + w.icon(iconProcesses) + "  PROCESSES  ·  resource explorer",
-			"CPU and RSS ranking, parent trees, full commands, zombie detection, reviewed process signals, service ownership and one-key jumps to open ports",
+			"CPU and RSS ranking, a per-CPU cores view with clocks, parent trees, full commands, zombie detection, reviewed process signals, service ownership and one-key jumps to open ports",
 			func() { w.navigateToSuite(3) },
 		},
 		{

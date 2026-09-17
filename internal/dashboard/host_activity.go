@@ -566,6 +566,11 @@ func shortCommand(command string) string {
 		return command
 	}
 	name := filepath.Base(fields[0])
+	// Kernel threads are named "[kworker/3:0H-events]": the slash is part of
+	// the name, not a path, so the bracketed form is kept whole.
+	if strings.HasPrefix(fields[0], "[") {
+		name = fields[0]
+	}
 	if len([]rune(name)) > 24 {
 		return string([]rune(name)[:23]) + "…"
 	}

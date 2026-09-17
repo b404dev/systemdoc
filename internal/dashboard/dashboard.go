@@ -320,6 +320,15 @@ func (w *workspace) buildDashboard() {
 		card.SetBorder(true)
 		w.cards[i] = card
 		w.telemetry.AddItem(card, 0, 1, false)
+		if i == 2 {
+			card.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+				if action == tview.MouseLeftClick && card.InRect(event.Position()) {
+					w.openCPUCores(nil)
+					return tview.MouseConsumed, nil
+				}
+				return action, event
+			})
+		}
 		if i < 2 {
 			filter := i + 1
 			card.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
@@ -588,9 +597,11 @@ func (w *workspace) updateDashboard() {
 	// The card has three inner rows and the trend takes two, so the count and
 	// clock ride on the border as part of the title. A quarter-width card
 	// below 120 columns has no room for them.
-	cpuTitle := "HOST CPU "
+	cpuTitle := "HOST CPU · C cores "
 	if label := cpuInventoryLabel(w.hostUsage); label != "" && w.lastWidth >= 120 {
-		cpuTitle = "HOST CPU · " + label + " "
+		cpuTitle = "HOST CPU · " + label + " · C cores "
+	} else if count := cpuCountText(w.hostUsage.cpus, false); count != "" && w.lastWidth >= 100 {
+		cpuTitle = "HOST CPU · " + count + " · C cores "
 	}
 	values := []struct{ title, colour, headline, visual string }{
 		{" " + w.iconLabel(iconHealthy, "ACTIVE · click to filter "), p.success, fmt.Sprintf("%d active · %s", totals.active, signalDelta(activeHistory)), activeVisual},

@@ -32,6 +32,16 @@ type hostUtilisation struct {
 	cpus     cpuInventory
 	clocks   cpuClocks
 	coreBusy []float64
+	// coreSplit breaks each CPU's interval into the kinds of time the kernel
+	// accounts, parallel to coreBusy. iowait is not busy time but is shown
+	// because a CPU that is idle waiting for disk explains a slow machine.
+	coreSplit []coreLoad
+}
+
+// coreLoad is one CPU's interval as shares of that CPU's elapsed time.
+type coreLoad struct {
+	user, system, iowait, steal float64
+	ok                          bool
 }
 
 // hostPressure is the "some" 10-second average from /proc/pressure: the share
@@ -113,7 +123,8 @@ type cpuTimes struct {
 }
 
 type coreTimes struct {
-	busy, total uint64
+	busy, total                 uint64
+	user, system, iowait, steal uint64
 }
 
 // parseProcStat reads the aggregate "cpu" line of /proc/stat and the cpuN
@@ -131,19 +142,19 @@ func parseProcStat(raw string) cpuTimes {
 		if len(fields) < 5 || !strings.HasPrefix(fields[0], "cpu") {
 			continue
 		}
-		busy, total, ok := procStatBusy(fields[1:])
+		core, ok := procStatBusy(fields[1:])
 		if fields[0] == "cpu" {
 			if !ok {
 				return cpuTimes{}
 			}
-			sample.busy, sample.total, sample.ok = busy, total, true
+			sample.busy, sample.total, sample.ok = core.busy, core.total, true
 			continue
 		}
 		index, err := strconv.Atoi(fields[0][3:])
 		if err != nil || index < 0 || !ok {
 			continue
 		}
-		cores[index] = coreTimes{busy: busy, total: total}
+		cores[index] = core
 		highest = max(highest, index)
 	}
 	if !sample.ok {
@@ -158,25 +169,39 @@ func parseProcStat(raw string) cpuTimes {
 	return sample
 }
 
-func procStatBusy(fields []string) (busy, total uint64, ok bool) {
+// procStatBusy reads one cpu line's columns: user nice system idle iowait
+// irq softirq steal. user and nice are user time; system, irq and softirq are
+// kernel time; idle and iowait are not busy; steal is time a hypervisor took.
+func procStatBusy(fields []string) (core coreTimes, ok bool) {
 	var idle uint64
 	for i, field := range fields {
 		value, err := strconv.ParseUint(field, 10, 64)
 		if err != nil {
-			return 0, 0, false
+			return coreTimes{}, false
 		}
 		if i >= 8 {
 			break
 		}
-		total += value
-		if i == 3 || i == 4 {
+		core.total += value
+		switch i {
+		case 0, 1:
+			core.user += value
+		case 2, 5, 6:
+			core.system += value
+		case 3:
 			idle += value
+		case 4:
+			idle += value
+			core.iowait += value
+		case 7:
+			core.steal += value
 		}
 	}
-	if total == 0 {
-		return 0, 0, false
+	if core.total == 0 {
+		return coreTimes{}, false
 	}
-	return total - idle, total, true
+	core.busy = core.total - idle
+	return core, true
 }
 
 // cpuPercent compares two cumulative samples. The counters only move forward,
@@ -296,6 +321,7 @@ func collectHostUtilisation(ctx context.Context, platform string, cores int, pre
 		current = parseProcStat(string(raw))
 		result.cpuPercent, result.cpuOK = cpuPercent(previous, current)
 		result.coreBusy = coreBusyShares(previous, current)
+		result.coreSplit = coreLoadShares(previous, current)
 	}
 	result.clocks = collectLinuxClocks("/proc", "/sys/devices/system/cpu", cores)
 	if raw, err := os.ReadFile("/proc/meminfo"); err == nil {
@@ -461,6 +487,20 @@ func (w *workspace) recordHostUtilisation(usage hostUtilisation) {
 	}
 	w.hostCPUHistory = appendBounded(w.hostCPUHistory, cpu)
 	w.hostMemoryHistory = appendBounded(w.hostMemoryHistory, memory)
+	// One trail per logical CPU, kept in step with the aggregate: a sample
+	// without per-CPU figures stores a gap in every trail.
+	if count := max(len(usage.coreBusy), len(w.hostCoreHistory)); count > 0 {
+		if len(w.hostCoreHistory) < count {
+			w.hostCoreHistory = append(w.hostCoreHistory, make([][]float64, count-len(w.hostCoreHistory))...)
+		}
+		for i := range w.hostCoreHistory {
+			value := -1.0
+			if i < len(usage.coreBusy) {
+				value = usage.coreBusy[i]
+			}
+			w.hostCoreHistory[i] = appendBounded(w.hostCoreHistory[i], value)
+		}
+	}
 }
 
 // trimHistory keeps the most recent samples that fit the card's chart width.

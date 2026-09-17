@@ -39,6 +39,17 @@ func TestCoreBusySharesLeaveGapsForUnusableCores(t *testing.T) {
 	if coreBusyShares(cpuTimes{}, second) != nil || coreBusyShares(first, first) != nil {
 		t.Fatal("a missing baseline or a repeated sample must report no shares")
 	}
+	// user nice system idle iowait irq softirq steal: cpu0 spent 30 user, 10
+	// system, 10 iowait and 10 steal of 100 elapsed ticks.
+	a := parseProcStat("cpu  10 0 0 90 0 0 0 0\ncpu0 10 0 0 90 0 0 0 0\n")
+	b := parseProcStat("cpu  40 0 10 130 10 0 0 10\ncpu0 40 0 10 130 10 0 0 10\n")
+	loads := coreLoadShares(a, b)
+	if len(loads) != 1 || !loads[0].ok || loads[0].user != 30 || loads[0].system != 10 || loads[0].iowait != 10 || loads[0].steal != 10 {
+		t.Fatalf("loads = %+v", loads)
+	}
+	if busy := coreBusyShares(a, b); busy[0] != 50 {
+		t.Fatalf("busy should exclude idle and iowait, got %v", busy)
+	}
 }
 
 func TestParseCPUInfoCountsCoresSocketsAndClocks(t *testing.T) {
@@ -69,6 +80,9 @@ cpu MHz		: 3400.000
 	inventory, clocks := parseCPUInfo(raw)
 	if !inventory.ok || inventory.logical != 4 || inventory.cores != 2 || inventory.sockets != 2 || inventory.model != "Fake CPU 3000" {
 		t.Fatalf("%+v", inventory)
+	}
+	if core, socket := inventory.coreLabel(3); core != "0" || socket != "1" {
+		t.Fatalf("cpu3 core %q socket %q", core, socket)
 	}
 	if !clocks.ok || clocks.source != "cpuinfo" || len(clocks.mhz) != 4 || clocks.mhz[1] != 1200 {
 		t.Fatalf("%+v", clocks)
@@ -110,9 +124,9 @@ func TestSysfsTopologyAndClocksReadAFakeTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "online"), []byte("0-2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cores, sockets, ok := sysfsTopology(root)
-	if !ok || cores != 2 || sockets != 1 {
-		t.Fatalf("cores %d sockets %d ok %v", cores, sockets, ok)
+	cores, sockets, coreOf, socketOf, ok := sysfsTopology(root)
+	if !ok || cores != 2 || sockets != 1 || len(coreOf) != 4 || coreOf[2] != 1 || socketOf[3] != 0 {
+		t.Fatalf("cores %d sockets %d coreOf %v socketOf %v ok %v", cores, sockets, coreOf, socketOf, ok)
 	}
 	lo, hi, ok := sysfsClockRange(root)
 	if !ok || lo != 800 || hi != 4200 {
@@ -137,6 +151,12 @@ func TestSysfsTopologyAndClocksReadAFakeTree(t *testing.T) {
 	// runtime fallback is not used when the kernel files answer.
 	if !inventory.ok || inventory.logical != 3 || inventory.cores != 2 || inventory.sockets != 1 || inventory.maxMHz != 4200 {
 		t.Fatalf("%+v", inventory)
+	}
+	if core, socket := inventory.coreLabel(2); core != "1" || socket != "0" {
+		t.Fatalf("cpu2 sits on core %q socket %q", core, socket)
+	}
+	if core, _ := inventory.coreLabel(9); core != "" {
+		t.Fatal("an unknown CPU must have no core label")
 	}
 	if fallback := collectLinuxCPUInventory(t.TempDir(), t.TempDir(), 8); !fallback.ok || fallback.logical != 8 || fallback.cores != 0 {
 		t.Fatalf("fallback: %+v", fallback)
