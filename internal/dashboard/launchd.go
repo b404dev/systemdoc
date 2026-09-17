@@ -38,10 +38,15 @@ func launchTarget(user bool, id string) (string, error) {
 var launchServiceRow = regexp.MustCompile(`^(\S+)\s+(\S+)\s+(.+)$`)
 
 // launchctl print is diagnostic text, not a stable API. Parse only its services
-// table and reject unfamiliar/truncated output rather than inventing inventory.
+// table and reject truncated output rather than inventing inventory. A row the
+// parser does not recognise is skipped; the table fails only when every row is.
 func parseLaunchServices(raw string) ([]workload, error) {
+	items, _, err := parseLaunchServicesTolerant(raw)
+	return items, err
+}
+
+func parseLaunchServicesTolerant(raw string) (items []workload, skipped int, err error) {
 	inTable, complete := false, false
-	var items []workload
 	seen := map[string]bool{}
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
@@ -58,48 +63,57 @@ func parseLaunchServices(raw string) ([]workload, error) {
 		if line == "" {
 			continue
 		}
-		fields := launchServiceRow.FindStringSubmatch(line)
-		if fields == nil {
-			return nil, fmt.Errorf("unrecognized launchctl services row: %q", line)
+		item, ok := parseLaunchServiceRow(line)
+		if !ok || seen[item.ID] {
+			skipped++
+			continue
 		}
-		fields = fields[1:]
-		pid := 0
-		if fields[0] != "-" {
-			var err error
-			pid, err = strconv.Atoi(fields[0])
-			if err != nil || pid < 0 {
-				return nil, fmt.Errorf("invalid launchd PID")
-			}
-		}
-		status := fields[1]
-		exitStatus := int64(0)
-		if status != "-" {
-			var err error
-			exitStatus, err = strconv.ParseInt(status, 0, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid launchd exit status")
-			}
-		}
-		id := fields[2]
-		if seen[id] {
-			return nil, fmt.Errorf("duplicate launchd label %s", id)
-		}
-		seen[id] = true
-		item := workload{ID: id, Name: id, PID: pid, State: "inactive", Detail: "idle / on demand", LoadState: "loaded", Description: "launchd job"}
-		if pid > 0 {
-			item.State = "active"
-			item.Detail = fmt.Sprintf("running · PID %d", pid)
-		} else if exitStatus != 0 {
-			item.State = "failed"
-			item.Detail = "last exit status " + status + " · not running"
-		}
+		seen[item.ID] = true
 		items = append(items, item)
 	}
 	if !inTable || !complete {
-		return nil, fmt.Errorf("launchctl did not return a complete services table; its diagnostic format may have changed")
+		return nil, skipped, fmt.Errorf("launchctl did not return a complete services table; its diagnostic format may have changed")
+	}
+	if len(items) == 0 && skipped > 0 {
+		return nil, skipped, fmt.Errorf("no launchctl services rows could be parsed (%d unrecognised)", skipped)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
-	return items, nil
+	return items, skipped, nil
+}
+
+func parseLaunchServiceRow(line string) (workload, bool) {
+	fields := launchServiceRow.FindStringSubmatch(line)
+	if fields == nil {
+		return workload{}, false
+	}
+	fields = fields[1:]
+	pid := 0
+	if fields[0] != "-" {
+		var err error
+		pid, err = strconv.Atoi(fields[0])
+		if err != nil || pid < 0 {
+			return workload{}, false
+		}
+	}
+	status := fields[1]
+	exitStatus := int64(0)
+	if status != "-" {
+		var err error
+		exitStatus, err = strconv.ParseInt(status, 0, 64)
+		if err != nil {
+			return workload{}, false
+		}
+	}
+	id := fields[2]
+	item := workload{ID: id, Name: id, PID: pid, State: "inactive", Detail: "idle / on demand", LoadState: "loaded", Description: "launchd job"}
+	if pid > 0 {
+		item.State = "active"
+		item.Detail = fmt.Sprintf("running · PID %d", pid)
+	} else if exitStatus != 0 {
+		item.State = "failed"
+		item.Detail = "last exit status " + status + " · not running"
+	}
+	return item, true
 }
 func listLaunchServices(ctx context.Context, user bool) ([]workload, error) {
 	raw, err := command(ctx, "launchctl", "print", launchDomain(user))

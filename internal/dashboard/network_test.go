@@ -54,6 +54,30 @@ func TestSSPreservesOwnersAndIPv6(t *testing.T) {
 		t.Fatal("diagnostics parsed as sockets")
 	}
 }
+func TestSSSkipsOnlyTheBadRows(t *testing.T) {
+	raw := ssFixture + "Cannot open netlink socket\n" + `tcp LISTEN 0 1 127.0.0.1:9 0.0.0.0:* users:(("ghost",pid=0,fd=1),("real",pid=7,fd=2))` + "\n"
+	rows, skipped, err := parseSSTolerant(raw)
+	if err != nil || len(rows) != 6 || skipped != 2 || rows[5].Process != "real" || rows[5].PID != 7 {
+		t.Fatalf("one bad row discarded the table: %d rows, %d skipped, %v", len(rows), skipped, err)
+	}
+	if _, skipped, err := parseSSTolerant("Cannot open netlink socket\nRTNETLINK answers: Operation not permitted"); err == nil || skipped != 2 {
+		t.Fatal("all-bad output accepted", skipped, err)
+	}
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "data")
+	if err := os.WriteFile(fixture, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SS_FIXTURE", fixture)
+	if err := os.WriteFile(filepath.Join(dir, "ss"), []byte("#!/bin/sh\n/bin/cat \"$SS_FIXTURE\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	result, err := collectNetworkSockets(context.Background(), "linux")
+	if err != nil || len(result.Sockets) != 6 || !strings.Contains(result.Note, "2 unrecognised ss rows skipped") {
+		t.Fatalf("skipped count not surfaced: %q %v", result.Note, err)
+	}
+}
 func TestLsofRecordsRetainProcessAndSocketBoundaries(t *testing.T) {
 	rows, err := parseLsofSockets(lsofFixture)
 	if err != nil || len(rows) != 4 {

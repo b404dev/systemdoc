@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -604,11 +605,15 @@ func (n *networkPage) updateDetail(row int) {
 func (n *networkPage) updateSummary() {
 	p := n.w.palette()
 	listeners, connections, udp, owners := 0, 0, 0, 0
+	// Flow states are the Network page's quickest health read: a TIME-WAIT
+	// or CLOSE-WAIT pile-up is visible here before anyone scrolls the table.
+	states := map[string]int{}
 	for _, s := range n.snapshot.Sockets {
 		if s.bound() {
 			listeners++
 		} else {
 			connections++
+			states[s.State]++
 		}
 		if s.Protocol == "UDP" && s.bound() {
 			udp++
@@ -622,7 +627,7 @@ func (n *networkPage) updateSummary() {
 		title, colour, headline, visual, note string
 	}{
 		{" LISTENING · bound sockets ", p.success, fmt.Sprintf("%d bound sockets", listeners), fmt.Sprintf("%d TCP  ·  %d UDP", listeners-udp, udp), "TCP listeners / UDP endpoints"},
-		{" CONNECTIONS · active flows ", p.accent, fmt.Sprintf("%d active flows", connections), "TCP + UDP", "sampled host connections"},
+		{" CONNECTIONS · active flows ", p.accent, fmt.Sprintf("%d active flows", connections), socketStateSummary(states), "sampled host connections"},
 		{" HOST SURFACE · attribution ", p.warning, fmt.Sprintf("%d owners  ·  %d interfaces", owners, interfaces), "process + host links", "permissions may hide owners"},
 	}
 	if n.view == 3 {
@@ -662,6 +667,32 @@ func (n *networkPage) updateSummary() {
 		n.cards[i].SetTitle(value.title).SetTitleColor(tcell.GetColor(value.colour))
 		n.cards[i].SetText(fmt.Sprintf("[%s::b]%s[-::-]\n%s\n[%s]%s[-]", value.colour, tview.Escape(value.headline), gradientText(value.visual, value.colour, p.accent), p.muted, value.note))
 	}
+}
+
+// socketStateSummary lists the busiest flow states, most common first, so the
+// card reads "ESTABLISHED 40 · TIME-WAIT 12 · CLOSE-WAIT 3" at a glance.
+func socketStateSummary(states map[string]int) string {
+	if len(states) == 0 {
+		return "TCP + UDP"
+	}
+	names := make([]string, 0, len(states))
+	for name := range states {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if states[names[i]] != states[names[j]] {
+			return states[names[i]] > states[names[j]]
+		}
+		return names[i] < names[j]
+	})
+	parts := []string{}
+	for i, name := range names {
+		if i == 3 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", name, states[name]))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // networkNumeric names the figure columns so they right-align like the host pages.

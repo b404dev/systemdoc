@@ -591,7 +591,7 @@ func kubeMemoryMiB(value string) (float64, bool) {
 
 // enrichKubeResources fills pod CPU and memory from the Metrics API. Metrics
 // are optional: without metrics-server the figures stay unknown.
-func enrichKubeResources(ctx context.Context, stack *kubeStack, items []workload) {
+func enrichKubeResources(ctx context.Context, stack *kubeStack, items []workload) string {
 	indexes := map[string]int{}
 	for i, item := range items {
 		if isPod(item) && isActive(item) {
@@ -599,11 +599,14 @@ func enrichKubeResources(ctx context.Context, stack *kubeStack, items []workload
 		}
 	}
 	if len(indexes) == 0 || stack == nil {
-		return
+		return ""
 	}
 	output, err := stack.run(ctx, 0, "top", "pods", "--all-namespaces", "--no-headers")
 	if err != nil {
-		return
+		if ctx.Err() != nil {
+			return ""
+		}
+		return "kubectl top: " + firstLine(err.Error())
 	}
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
@@ -621,6 +624,7 @@ func enrichKubeResources(ctx context.Context, stack *kubeStack, items []workload
 			items[i].Memory = fmt.Sprintf("%.1f MiB", memory)
 		}
 	}
+	return ""
 }
 
 // kubeResourceOutput formats one pod's kubectl top reading, per container.

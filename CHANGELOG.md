@@ -4,6 +4,20 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+### Added
+
+- Host signals beside the percentages: the CPU card carries the one-minute load average, the memory card names swap in use, and the masthead adds a `STALL` reading from `/proc/pressure` when tasks have waited on CPU, memory or I/O for more than 5% of the last ten seconds.
+- The bulk `systemctl show` now also samples MainPID, restarts, tasks, peak memory and cumulative I/O. The selected-service band shows the restart count whenever the manager has restarted the unit, and the Metrics tab is filled from that sample instead of running `systemctl show` for the selected unit on every poll. The container Metrics tab likewise reuses the `docker stats` line that fills the list.
+- The Network page's Connections card counts flows by state, most common first, so `TIME-WAIT` and `CLOSE-WAIT` build-ups are visible without scrolling.
+- When an accounting command fails (`systemctl show`, `docker stats`, `kubectl top`) the summary line says `accounting unavailable` and names it; blank resource columns are no longer silent.
+
+### Collection
+
+- Linux filesystem capacity is read from `/proc/self/mountinfo` and `statfs` per mount instead of `df`. GNU df exits non-zero on one unreadable FUSE mount and printed nothing usable, and a stale network mount stalled the whole call; now each mount is sampled on its own with a two-second deadline and unreadable or unreachable mounts are named in the status line.
+- Process Explorer CPU is an interval rate on Linux, read from `/proc/<pid>/stat` between snapshots. `ps pcpu` is a lifetime average, so a process that was busy an hour ago ranked above one busy now.
+- `ps`, `df`, `ss` and `launchctl` rows in an unrecognised shape are skipped and counted rather than discarding the snapshot.
+- Installed unit files are listed once a minute rather than on every poll; an explicit refresh re-reads them.
+
 ### Interface
 
 - Telemetry trails floor every non-zero reading at one level, so a host running at a few percent shows a visible line on the fixed 0–100 scale instead of an empty chart.

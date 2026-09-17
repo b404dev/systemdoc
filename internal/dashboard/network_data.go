@@ -69,15 +69,24 @@ func socketState(value string) string {
 
 var ssOwner = regexp.MustCompile(`\("((?:[^"\\]|\\.)*)",pid=([0-9]+),fd=([0-9]+)\)`)
 
+// parseSS keeps the historical signature: it fails only when the output had
+// rows and none of them was a socket.
 func parseSS(raw string) ([]networkSocket, error) {
-	var rows []networkSocket
+	rows, _, err := parseSSTolerant(raw)
+	return rows, err
+}
+
+// parseSSTolerant skips rows (or owner entries) it cannot read and counts
+// them, so one odd row no longer blanks the whole socket table.
+func parseSSTolerant(raw string) (rows []networkSocket, skipped int, err error) {
 	for _, line := range strings.Split(raw, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		f := strings.Fields(line)
 		if len(f) < 6 || (f[0] != "tcp" && f[0] != "udp") {
-			return nil, fmt.Errorf("unrecognized ss socket row")
+			skipped++
+			continue
 		}
 		s := networkSocket{Protocol: strings.ToUpper(f[0]), State: socketState(f[1]), Local: f[4], Remote: f[5]}
 		host, _ := socketEndpoint(s.Local)
@@ -115,14 +124,18 @@ func parseSS(raw string) ([]networkSocket, error) {
 			}
 			pid, err := strconv.Atoi(owner[2])
 			if err != nil || pid <= 0 {
-				return nil, fmt.Errorf("invalid ss process identifier")
+				skipped++
+				continue
 			}
 			row.PID = pid
 			row.FD = owner[3]
 			rows = append(rows, row)
 		}
 	}
-	return rows, nil
+	if len(rows) == 0 && skipped > 0 {
+		return nil, skipped, fmt.Errorf("no ss socket rows could be parsed (%d unrecognised)", skipped)
+	}
+	return rows, skipped, nil
 }
 
 // NUL field records keep process names separate from file records and endpoints.
@@ -282,11 +295,12 @@ func collectNetworkSockets(ctx context.Context, platform string) (networkSnapsho
 		result.Source = "ss · host network namespace"
 		raw, diagnostic, err = networkCommand(ctx, "ss", "-H", "-n", "-a", "-t", "-u", "-p", "-e")
 		if err == nil {
-			result.Sockets, err = parseSS(raw)
+			var skipped int
+			result.Sockets, skipped, err = parseSSTolerant(raw)
 			if err != nil {
 				return result, err
 			}
-			result.Note = diagnostic
+			result.Note = joinNote(diagnostic, skippedNote(skipped, "ss rows"))
 			enrichNetworkOwners(result.Sockets)
 			return result, nil
 		}

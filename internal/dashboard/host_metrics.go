@@ -18,6 +18,81 @@ type hostUtilisation struct {
 	memUsed    int64 // bytes
 	memTotal   int64 // bytes
 	memOK      bool
+	// Signals the CPU and memory percentages do not carry: run-queue
+	// pressure, swap in use, and the kernel's own stall accounting.
+	load1, load5, load15 float64
+	loadOK               bool
+	swapUsed, swapTotal  int64 // bytes
+	swapOK               bool
+	pressure             hostPressure
+}
+
+// hostPressure is the "some" 10-second average from /proc/pressure: the share
+// of time at least one task was stalled waiting for that resource.
+type hostPressure struct {
+	cpu, memory, io float64
+	ok              bool
+}
+
+// parseLoadavg reads the three load averages from /proc/loadavg.
+func parseLoadavg(raw string) (load1, load5, load15 float64, ok bool) {
+	fields := strings.Fields(raw)
+	if len(fields) < 3 {
+		return 0, 0, 0, false
+	}
+	values := [3]float64{}
+	for i := range values {
+		value, err := strconv.ParseFloat(fields[i], 64)
+		if err != nil || value < 0 {
+			return 0, 0, 0, false
+		}
+		values[i] = value
+	}
+	return values[0], values[1], values[2], true
+}
+
+// parsePressureSome reads the "some avg10" figure of one /proc/pressure file.
+func parsePressureSome(raw string) (float64, bool) {
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "some" {
+			continue
+		}
+		for _, field := range fields[1:] {
+			if value, found := strings.CutPrefix(field, "avg10="); found {
+				n, err := strconv.ParseFloat(value, 64)
+				return max(0, min(100, n)), err == nil
+			}
+		}
+	}
+	return 0, false
+}
+
+// parseSwap returns swap in use and configured, in bytes, from /proc/meminfo.
+// A machine without swap reports ok with a zero total.
+func parseSwap(raw string) (used, total int64, ok bool) {
+	values := map[string]int64{}
+	for _, line := range strings.Split(raw, "\n") {
+		name, rest, found := strings.Cut(line, ":")
+		if !found || (name != "SwapTotal" && name != "SwapFree") {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			continue
+		}
+		value, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil || value < 0 {
+			return 0, 0, false
+		}
+		values[name] = value * 1024
+	}
+	total, found := values["SwapTotal"]
+	free, foundFree := values["SwapFree"]
+	if !found || !foundFree || free > total {
+		return 0, 0, false
+	}
+	return total - free, total, true
 }
 
 // cpuTimes is one cumulative CPU accounting sample. A percentage needs two.
@@ -180,8 +255,59 @@ func collectHostUtilisation(ctx context.Context, platform string, cores int, pre
 			result.memUsed, result.memTotal, result.memOK = used, total, true
 			result.memPercent = float64(used) / float64(total) * 100
 		}
+		result.swapUsed, result.swapTotal, result.swapOK = parseSwap(string(raw))
 	}
+	if raw, err := os.ReadFile("/proc/loadavg"); err == nil {
+		result.load1, result.load5, result.load15, result.loadOK = parseLoadavg(string(raw))
+	}
+	result.pressure = readPressure("/proc/pressure")
 	return result, current
+}
+
+// readPressure reads the three PSI files. The directory is absent on kernels
+// without PSI or with it disabled, and then the reading simply stays missing.
+func readPressure(dir string) hostPressure {
+	var result hostPressure
+	any := false
+	for name, target := range map[string]*float64{"cpu": &result.cpu, "memory": &result.memory, "io": &result.io} {
+		raw, err := os.ReadFile(dir + "/" + name)
+		if err != nil {
+			continue
+		}
+		if value, ok := parsePressureSome(string(raw)); ok {
+			*target = value
+			any = true
+		}
+	}
+	result.ok = any
+	return result
+}
+
+// pressureSignal names the stalled resources worth a glance: below 5% the
+// kernel is merely busy, from 5% tasks are waiting, from 25% they are
+// waiting often enough to explain slowness.
+func pressureSignal(p palette, pressure hostPressure) string {
+	if !pressure.ok {
+		return ""
+	}
+	parts := []string{}
+	for _, axis := range []struct {
+		name  string
+		value float64
+	}{{"cpu", pressure.cpu}, {"mem", pressure.memory}, {"io", pressure.io}} {
+		if axis.value < 5 {
+			continue
+		}
+		hue := p.warning
+		if axis.value >= 25 {
+			hue = p.error
+		}
+		parts = append(parts, "["+hue+"::b]"+axis.name+" "+strconv.FormatFloat(axis.value, 'f', 0, 64)+"%[-::-]")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "[" + p.muted + "]STALL[-] " + strings.Join(parts, " ")
 }
 
 // macOS exposes no cumulative aggregate counter comparable to /proc/stat, so
@@ -240,6 +366,7 @@ func (w *workspace) hostMetricsLoop(cores int) {
 // are stored as -1 so the renderer leaves a gap instead of drawing a zero.
 func (w *workspace) recordHostUtilisation(usage hostUtilisation) {
 	w.hostUsage = usage
+	w.telemetryDirty.Store(true)
 	cpu, memory := -1.0, -1.0
 	if usage.cpuOK {
 		cpu = usage.cpuPercent
@@ -277,6 +404,11 @@ func hostCPUHeadline(usage hostUtilisation, tracked string) string {
 	if usage.cpuOK {
 		share = strconv.FormatFloat(usage.cpuPercent, 'f', 0, 64) + "%"
 	}
+	if usage.loadOK {
+		// The one-minute load average says how many tasks wanted a CPU, which
+		// a utilisation percentage alone cannot show on a saturated machine.
+		return share + " · load " + strconv.FormatFloat(usage.load1, 'f', 2, 64) + " · " + tracked + " tracked"
+	}
 	return share + " · " + tracked + " tracked"
 }
 
@@ -284,7 +416,11 @@ func hostMemoryHeadline(usage hostUtilisation, tracked string) string {
 	if !usage.memOK {
 		return "— · " + tracked + " tracked"
 	}
-	return strconv.FormatFloat(usage.memPercent, 'f', 0, 64) + "% · " + hostBytesPair(usage.memUsed, usage.memTotal)
+	headline := strconv.FormatFloat(usage.memPercent, 'f', 0, 64) + "% · " + hostBytesPair(usage.memUsed, usage.memTotal)
+	if usage.swapOK && usage.swapUsed > 0 {
+		headline += " · swap " + hostBytesPair(usage.swapUsed, usage.swapTotal)
+	}
+	return headline
 }
 
 func appendBounded(values []float64, value float64) []float64 {

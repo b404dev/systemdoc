@@ -66,29 +66,34 @@ type workspace struct {
 	splashView                       *tview.TextView
 	footerBar                        *tview.Flex
 	loadingAnimation                 atomic.Bool
-	cards                            [4]*tview.TextView
-	modeButtons                      [2]*tview.Button
-	tabButtons                       [5]*tview.Button
-	toolbarButtons                   []*tview.Button
-	workspaceButtons                 []*tview.Button
-	quickFilter, sortMode, zoom      int
-	fleetHistory                     [2][]fleetSample
-	hostUsage                        hostUtilisation
-	hostCPUHistory                   []float64
-	hostMemoryHistory                []float64
-	lastRefresh                      [2]time.Time
-	backendError                     [2]bool
-	body                             *tview.Flex
-	inspector                        *tview.Flex
-	favoriteOnly                     bool
-	logPaused                        bool
-	logQuery                         string
-	paused                           bool
-	metrics                          map[string][]metricSample
-	activity                         []activityEvent
-	commandHistory                   []string
-	workloadHistory                  map[string][]workloadSignal
-	hostLabel                        string
+	// telemetryDirty is raised when a host sample or inventory changes what
+	// the cards show; the one-second tick draws a frame only when it is set.
+	telemetryDirty              atomic.Bool
+	cards                       [4]*tview.TextView
+	modeButtons                 [2]*tview.Button
+	tabButtons                  [5]*tview.Button
+	toolbarButtons              []*tview.Button
+	workspaceButtons            []*tview.Button
+	quickFilter, sortMode, zoom int
+	fleetHistory                [2][]fleetSample
+	hostUsage                   hostUtilisation
+	hostCPUHistory              []float64
+	hostMemoryHistory           []float64
+	lastRefresh                 [2]time.Time
+	backendError                [2]bool
+	// inventoryNote names an accounting source that failed on the last poll.
+	inventoryNote   [2]string
+	body            *tview.Flex
+	inspector       *tview.Flex
+	favoriteOnly    bool
+	logPaused       bool
+	logQuery        string
+	paused          bool
+	metrics         map[string][]metricSample
+	activity        []activityEvent
+	commandHistory  []string
+	workloadHistory map[string][]workloadSignal
+	hostLabel       string
 }
 
 type Options struct {
@@ -374,7 +379,31 @@ func hostReadout(p palette, usage hostUtilisation) string {
 	if usage.memOK {
 		memory, memoryHue = fmt.Sprintf("%.0f%%", usage.memPercent), pressureHue(p, int(usage.memPercent))
 	}
-	return fmt.Sprintf("[%s]HOST[-] [%s::b]CPU %s[-::-] [%s]·[-] [%s::b]MEM %s[-::-]", p.muted, cpuHue, cpu, p.muted, memoryHue, memory)
+	readout := fmt.Sprintf("[%s]HOST[-] [%s::b]CPU %s[-::-] [%s]·[-] [%s::b]MEM %s[-::-]", p.muted, cpuHue, cpu, p.muted, memoryHue, memory)
+	if usage.loadOK {
+		readout += fmt.Sprintf(" [%s]·[-] [%s::b]LOAD %.2f[-::-]", p.muted, p.text, usage.load1)
+	}
+	if stall := pressureSignal(p, usage.pressure); stall != "" {
+		readout += fmt.Sprintf(" [%s]·[-] %s", p.muted, stall)
+	}
+	return readout
+}
+
+// bulkMetrics renders the Metrics tab from accounting already on the row.
+// It reports false when the row carries none, and the caller falls back to
+// asking the backend directly.
+func (w *workspace) bulkMetrics(item workload) (string, bool) {
+	switch {
+	case w.mode == 0 && !usesLaunchd():
+		raw := bulkResourceText(item)
+		if raw == "" {
+			return "", false
+		}
+		return w.resourceOutputAt(item.ID, raw, item.SampleAt) + "\n\n" + serviceAccountingLine(item), true
+	case w.mode == 1 && !isPod(item) && item.Stats != "":
+		return dockerResourceOutput(item.Stats), true
+	}
+	return "", false
 }
 
 func (w *workspace) queue(update func()) {
@@ -550,6 +579,19 @@ func (w *workspace) showDetail() {
 		w.detail.ScrollToBeginning()
 	}
 
+	// Metrics for systemd units and containers come from the bulk sample the
+	// list already holds, so the tab costs no subprocess and shows the same
+	// figures as the row beside it.
+	if w.tab == 3 {
+		if text, ok := w.bulkMetrics(selected); ok {
+			row, col := w.detail.GetScrollOffset()
+			w.detail.SetText(richOutput(text, 3, w.palette()))
+			if w.refreshDetail {
+				w.detail.ScrollTo(row, col)
+			}
+			return
+		}
+	}
 	key := detailKey{mode: w.mode, user: w.user, id: selected.ID, tab: w.tab}
 	cached, exists := w.detailCache[key]
 	if exists {

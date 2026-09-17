@@ -9,8 +9,11 @@ import (
 	"time"
 )
 
-func enrichServiceResources(ctx context.Context, user bool, items []workload) {
-	args := []string{"show", "--property=Id,Names,LoadState,ActiveState,SubState,CPUUsageNSec,MemoryCurrent", "--"}
+// enrichServiceResources fills accounting for every loaded unit from one
+// systemctl show call. It returns a note when the call failed outright, so
+// the summary line can say why the resource columns are blank.
+func enrichServiceResources(ctx context.Context, user bool, items []workload) string {
+	args := []string{"show", "--property=Id,Names,LoadState,ActiveState,SubState,MainPID,NRestarts,TasksCurrent,CPUUsageNSec,MemoryCurrent,MemoryPeak,IOReadBytes,IOWriteBytes,ControlGroup", "--"}
 	if user {
 		args = append([]string{"--user"}, args...)
 	}
@@ -22,11 +25,14 @@ func enrichServiceResources(ctx context.Context, user bool, items []workload) {
 		}
 	}
 	if len(indexes) == 0 {
-		return
+		return ""
 	}
 	text, err := command(ctx, "systemctl", args...)
 	if err != nil && text == "" {
-		return
+		if ctx.Err() != nil {
+			return ""
+		}
+		return "systemctl show: " + firstLine(err.Error())
 	}
 	now := time.Now()
 	for _, block := range strings.Split(text, "\n\n") {
@@ -65,7 +71,73 @@ func enrichServiceResources(ctx context.Context, user bool, items []workload) {
 		if n, err := strconv.ParseUint(values["MemoryCurrent"], 10, 64); err == nil && n != ^uint64(0) {
 			items[i].Memory = fmt.Sprintf("%.1f MiB", float64(n)/1024/1024)
 		}
+		if n, err := strconv.ParseUint(values["MemoryPeak"], 10, 64); err == nil && n != ^uint64(0) {
+			items[i].MemoryPeak, items[i].HasMemoryPeak = n, true
+		}
+		items[i].Tasks = -1
+		if n, err := strconv.ParseInt(values["TasksCurrent"], 10, 64); err == nil && n >= 0 {
+			items[i].Tasks = n
+		}
+		if n, err := strconv.Atoi(values["NRestarts"]); err == nil && n >= 0 {
+			items[i].Restarts = n
+		}
+		if n, err := strconv.Atoi(values["MainPID"]); err == nil && n > 0 {
+			items[i].MainPID = n
+		}
+		read, readErr := strconv.ParseUint(values["IOReadBytes"], 10, 64)
+		write, writeErr := strconv.ParseUint(values["IOWriteBytes"], 10, 64)
+		if readErr == nil && writeErr == nil && read != ^uint64(0) && write != ^uint64(0) {
+			items[i].IORead, items[i].IOWrite, items[i].HasIO = read, write, true
+		}
+		items[i].CGroup = values["ControlGroup"]
 	}
+	return ""
+}
+
+// bulkResourceText renders the accounting already on a systemd row in the
+// key=value form the Metrics tab's counter parser reads, so selecting the tab
+// costs no subprocess. It is empty when the bulk sample carried nothing.
+func bulkResourceText(item workload) string {
+	if !item.HasCPU {
+		return ""
+	}
+	var out strings.Builder
+	fmt.Fprintf(&out, "CPUUsageNSec=%d\n", item.CPUCounter)
+	if n, ok := memoryValue(item.Memory); ok {
+		fmt.Fprintf(&out, "MemoryCurrent=%d\n", uint64(n*1024*1024))
+	}
+	if item.HasMemoryPeak {
+		fmt.Fprintf(&out, "MemoryPeak=%d\n", item.MemoryPeak)
+	}
+	if item.Tasks >= 0 {
+		fmt.Fprintf(&out, "TasksCurrent=%d\n", item.Tasks)
+	}
+	if item.HasIO {
+		fmt.Fprintf(&out, "IOReadBytes=%d\nIOWriteBytes=%d\n", item.IORead, item.IOWrite)
+	}
+	fmt.Fprintf(&out, "NRestarts=%d\n", item.Restarts)
+	if item.MainPID > 0 {
+		fmt.Fprintf(&out, "MainPID=%d\n", item.MainPID)
+	}
+	if item.CGroup != "" {
+		fmt.Fprintf(&out, "ControlGroup=%s\n", item.CGroup)
+	}
+	return strings.TrimRight(out.String(), "\n")
+}
+
+// serviceAccountingLine is the one-line reading of the extra bulk fields.
+func serviceAccountingLine(item workload) string {
+	parts := []string{fmt.Sprintf("Restarts %d", item.Restarts)}
+	if item.Tasks >= 0 {
+		parts = append(parts, fmt.Sprintf("Tasks %d", item.Tasks))
+	}
+	if item.HasMemoryPeak {
+		parts = append(parts, fmt.Sprintf("Peak memory %.1f MiB", float64(item.MemoryPeak)/1024/1024))
+	}
+	if item.HasIO {
+		parts = append(parts, "I/O read "+hostBytes(int64(item.IORead), false)+" · written "+hostBytes(int64(item.IOWrite), false))
+	}
+	return strings.Join(parts, " · ")
 }
 func computeResourceRates(before, after []workload) {
 	previous := map[string]workload{}
@@ -82,19 +154,22 @@ func computeResourceRates(before, after []workload) {
 
 // A single stats snapshot populates the container list and fleet cards together.
 // Stats access is optional: inventory remains usable when accounting is unavailable.
-func enrichDockerResources(ctx context.Context, items []workload) {
+func enrichDockerResources(ctx context.Context, items []workload) string {
 	indexes := map[string]int{}
 	for i, item := range items {
-		if isActive(item) {
+		if isActive(item) && !isPod(item) {
 			indexes[item.ID] = i
 		}
 	}
 	if len(indexes) == 0 {
-		return
+		return ""
 	}
 	output, err := command(ctx, "docker", "stats", "--no-stream", "--no-trunc", "--format", "{{json .}}")
 	if err != nil {
-		return
+		if ctx.Err() != nil {
+			return ""
+		}
+		return "docker stats: " + firstLine(err.Error())
 	}
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		var row struct{ ID, CPUPerc, MemUsage string }
@@ -105,6 +180,9 @@ func enrichDockerResources(ctx context.Context, items []workload) {
 		if !ok {
 			continue
 		}
+		// The full line feeds the Metrics tab, which used to run docker stats
+		// again for the one selected container on every poll.
+		items[i].Stats = line
 		if _, ok := cpuValue(row.CPUPerc); ok {
 			items[i].CPU = row.CPUPerc
 		}
@@ -112,4 +190,5 @@ func enrichDockerResources(ctx context.Context, items []workload) {
 			items[i].Memory = fmt.Sprintf("%.1f MiB", n)
 		}
 	}
+	return ""
 }

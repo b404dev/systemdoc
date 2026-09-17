@@ -50,6 +50,13 @@ func parseCounters(text string, previous *metricSample, now time.Time) metricSam
 }
 
 func (w *workspace) resourceOutput(id, raw string) string {
+	return w.resourceOutputAt(id, raw, time.Now())
+}
+
+// resourceOutputAt records one counter sample taken at the given time. A
+// sample carrying the same time as the last one is the same bulk reading
+// shown again, so it refreshes the display without adding a history point.
+func (w *workspace) resourceOutputAt(id, raw string, at time.Time) string {
 	if w.metrics == nil {
 		w.metrics = map[string][]metricSample{}
 	}
@@ -59,7 +66,15 @@ func (w *workspace) resourceOutput(id, raw string) string {
 	if len(history) > 0 {
 		previous = &history[len(history)-1]
 	}
-	sample := parseCounters(raw, previous, time.Now())
+	if previous != nil && previous.at.Equal(at) {
+		history = history[:len(history)-1]
+		if len(history) > 0 {
+			previous = &history[len(history)-1]
+		} else {
+			previous = nil
+		}
+	}
+	sample := parseCounters(raw, previous, at)
 	history = append(history, sample)
 	if len(history) > 60 {
 		history = history[len(history)-60:]

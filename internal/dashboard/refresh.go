@@ -25,6 +25,7 @@ func (w *workspace) load() {
 	if w.mode == 1 {
 		retryKubeProbe()
 	}
+	invalidateUnitFiles()
 	w.startInventory(w.mode)
 }
 
@@ -76,7 +77,7 @@ func (w *workspace) startInventory(mode int) {
 		if err != nil || ctx.Err() != nil {
 			return
 		}
-		items = enrichInventory(ctx, mode, job.user, items)
+		items, note := enrichInventory(ctx, mode, job.user, items)
 		if ctx.Err() != nil {
 			return
 		}
@@ -85,6 +86,7 @@ func (w *workspace) startInventory(mode int) {
 				return
 			}
 			w.inventoryJobs[mode] = nil
+			w.inventoryNote[mode] = note
 			computeResourceRates(w.items[mode], items)
 			w.publishInventory(mode, items, true)
 		})
@@ -109,6 +111,10 @@ func carryAccounting(previous, items []workload) []workload {
 			if item.State == prior.State && item.PID == prior.PID {
 				items[i].CPU, items[i].Memory = prior.CPU, prior.Memory
 				items[i].CPUCounter, items[i].HasCPU, items[i].SampleAt = prior.CPUCounter, prior.HasCPU, prior.SampleAt
+				items[i].MainPID, items[i].Restarts, items[i].Tasks, items[i].CGroup = prior.MainPID, prior.Restarts, prior.Tasks, prior.CGroup
+				items[i].MemoryPeak, items[i].HasMemoryPeak = prior.MemoryPeak, prior.HasMemoryPeak
+				items[i].IORead, items[i].IOWrite, items[i].HasIO = prior.IORead, prior.IOWrite, prior.HasIO
+				items[i].Stats = prior.Stats
 			}
 		}
 		delete(old, item.ID)

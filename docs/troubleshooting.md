@@ -32,7 +32,7 @@ Compose needs the `docker compose` plugin. Registered projects belong to their r
 
 ## Resources show dashes or unexpected totals
 
-A dash means unavailable, not zero. Systemd accounting must expose the corresponding counters. CPU needs consecutive samples and uses 100% for one logical CPU, so totals may exceed 100%. Telemetry sums reporting workloads, not the host. Trends use up to 32 inventory samples and an automatic scale.
+A dash means unavailable, not zero. Systemd accounting must expose the corresponding counters. CPU needs consecutive samples and uses 100% for one logical CPU, so totals may exceed 100%. The tracked figure beside a host percentage sums reporting workloads only. When the accounting command itself fails, the summary line under the cards says `accounting unavailable` and names it (`systemctl show`, `docker stats` or `kubectl top`); fix the permission or the tool and the columns fill on the next poll. Trends use up to 32 inventory samples and an automatic scale.
 
 ## The layout or colours look wrong
 

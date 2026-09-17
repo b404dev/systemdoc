@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,15 @@ type workload struct {
 	CPUCounter                                    uint64
 	HasCPU                                        bool
 	SampleAt                                      time.Time
+	// Accounting the bulk systemctl show already returns: kept on the row so
+	// the Metrics tab and the selection band need no per-unit subprocess.
+	MainPID, Restarts           int
+	Tasks                       int64 // -1 when unknown
+	MemoryPeak, IORead, IOWrite uint64
+	HasMemoryPeak, HasIO        bool
+	CGroup                      string
+	// Stats is the container's docker stats JSON line from the bulk sample.
+	Stats string
 }
 
 func command(ctx context.Context, name string, args ...string) (string, error) {
@@ -64,7 +74,8 @@ func inventory(ctx context.Context, mode int, user bool) ([]workload, error) {
 	if err != nil {
 		return nil, err
 	}
-	return enrichInventory(ctx, mode, user, items), nil
+	items, _ = enrichInventory(ctx, mode, user, items)
+	return items, nil
 }
 
 // List identities and states without waiting for resource sampling.
@@ -169,23 +180,56 @@ type unitFile struct {
 	State    string `json:"state"`
 }
 
+// Installed unit files change when packages are installed or drafts are
+// written, not every five seconds, so the listing is reused for a minute.
+// An explicit reload (r, or a completed operation) invalidates it.
+var unitFileCache = struct {
+	sync.Mutex
+	at    [2]time.Time
+	files [2][]unitFile
+}{}
+
+const unitFileTTL = time.Minute
+
+func invalidateUnitFiles() {
+	unitFileCache.Lock()
+	unitFileCache.at = [2]time.Time{}
+	unitFileCache.Unlock()
+}
+
 func listUnitFiles(ctx context.Context, user bool) []unitFile {
+	scope := 0
+	if user {
+		scope = 1
+	}
+	unitFileCache.Lock()
+	cached, at := unitFileCache.files[scope], unitFileCache.at[scope]
+	unitFileCache.Unlock()
+	if !at.IsZero() && time.Since(at) < unitFileTTL {
+		return cached
+	}
 	args := []string{"list-unit-files", "--type=service", "--output=json", "--no-pager"}
 	if user {
 		args = append([]string{"--user"}, args...)
 	}
 	output, err := command(ctx, "systemctl", args...)
 	if err != nil {
-		return nil
+		return cached
 	}
 	var files []unitFile
 	if json.Unmarshal([]byte(output), &files) != nil {
-		return nil
+		return cached
 	}
+	unitFileCache.Lock()
+	unitFileCache.files[scope], unitFileCache.at[scope] = files, time.Now()
+	unitFileCache.Unlock()
 	return files
 }
 
-func enrichInventory(ctx context.Context, mode int, user bool, items []workload) []workload {
+// enrichInventory adds accounting to a fast listing. The note names any
+// accounting source that failed, so blank CPU and memory columns are
+// explained on screen instead of looking like an idle machine.
+func enrichInventory(ctx context.Context, mode int, user bool, items []workload) ([]workload, string) {
 	if mode == 1 {
 		hasPods := false
 		for _, item := range items {
@@ -194,27 +238,32 @@ func enrichInventory(ctx context.Context, mode int, user bool, items []workload)
 				break
 			}
 		}
-		enrichDockerResources(ctx, items)
+		notes := []string{}
+		if note := enrichDockerResources(ctx, items); note != "" {
+			notes = append(notes, note)
+		}
 		if hasPods {
 			// Sequential on purpose: both samplers walk the whole slice.
-			enrichKubeResources(ctx, currentKubeStack(ctx), items)
+			if note := enrichKubeResources(ctx, currentKubeStack(ctx), items); note != "" {
+				notes = append(notes, note)
+			}
 		}
-		return items
+		return items, strings.Join(notes, " · ")
 	}
 	if usesLaunchd() {
-		return enrichLaunchInventory(ctx, user, items)
+		return enrichLaunchInventory(ctx, user, items), ""
 	}
 	// Unit-file discovery and resource accounting are independent queries.
 	filesReady := make(chan []unitFile, 1)
 	go func() { filesReady <- listUnitFiles(ctx, user) }()
-	enrichServiceResources(ctx, user, items)
+	note := enrichServiceResources(ctx, user, items)
 	var files []unitFile
 	select {
 	case <-ctx.Done():
-		return items
+		return items, note
 	case files = <-filesReady:
 	}
-	return mergeUnitFiles(items, files)
+	return mergeUnitFiles(items, files), note
 }
 
 func mergeUnitFiles(items []workload, files []unitFile) []workload {

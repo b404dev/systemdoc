@@ -602,7 +602,13 @@ func (w *workspace) updateDashboard() {
 		if w.favoriteOnly {
 			filter = w.icon(iconFavorite) + " " + filter
 		}
-		w.summary.SetText(fmt.Sprintf(" %d/%d · %s · %s · %s · %s %d  %s %d", len(w.visible), len(w.items[w.mode]), shortStatus, filter, sortNames[w.sortMode], w.icon(iconHealthy), totals.active, w.icon(iconAttention), totals.attention))
+		line := fmt.Sprintf(" %d/%d · %s · %s · %s · %s %d  %s %d", len(w.visible), len(w.items[w.mode]), shortStatus, filter, sortNames[w.sortMode], w.icon(iconHealthy), totals.active, w.icon(iconAttention), totals.attention)
+		if note := w.inventoryNote[w.mode]; note != "" {
+			// A failed accounting call is said out loud; blank resource
+			// columns must never look like an idle machine.
+			line += " · " + ellipsize("accounting unavailable · "+clean(note), max(20, w.lastWidth-displayWidth(line)-3))
+		}
+		w.summary.SetText(line)
 	}
 	w.updateLoadingIndicator()
 	w.updateSelectionCard()
@@ -622,6 +628,11 @@ func (w *workspace) updateSelectionCard() {
 		return
 	}
 	context := "boot " + available(item.Enablement)
+	if w.mode == 0 && !usesLaunchd() && item.Restarts > 0 {
+		// A unit that keeps being restarted by its manager is a signal in
+		// itself, even while its state reads active.
+		context += fmt.Sprintf(" · %d restarts", item.Restarts)
+	}
 	if w.mode == 0 && usesLaunchd() {
 		context = "override " + available(item.Enablement) + " · " + launchDomain(w.user)
 	}

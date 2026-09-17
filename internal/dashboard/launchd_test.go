@@ -48,10 +48,16 @@ func TestLaunchServicesParseStatesAndRejectBrokenOutput(t *testing.T) {
 	if byID["homebrew.mxcl.postgresql"].PID != 123 || byID["homebrew.mxcl.postgresql"].State != "active" || byID["com.example.idle"].State != "inactive" || byID["com.example.failed"].State != "failed" || byID["com.example.completed"].State != "inactive" {
 		t.Fatal(rows)
 	}
-	for _, raw := range []string{"", "system = {\n services = {\n 123 0 job\n", "services = {\n bad row\n}", "services = {\n 0 0 foo\n 0 0 foo\n}"} {
+	for _, raw := range []string{"", "system = {\n services = {\n 123 0 job\n", "services = {\n bad row\n}", "services = {\n bad row\n x y\n}"} {
 		if _, err := parseLaunchServices(raw); err == nil {
 			t.Fatal("accepted invalid inventory", raw)
 		}
+	}
+	// One unrecognised row, a bad PID and a duplicate label are skipped; the
+	// rest of the table is kept and the count is reported.
+	tolerant, skipped, err := parseLaunchServicesTolerant("services = {\n 123 0 com.a\n bad row\n abc 0 com.b\n 0 0 com.c\n 0 0 com.c\n}")
+	if err != nil || len(tolerant) != 2 || skipped != 3 || tolerant[0].ID != "com.a" || tolerant[1].ID != "com.c" {
+		t.Fatalf("tolerant launchd parse: %+v %d %v", tolerant, skipped, err)
 	}
 	rows, err = parseLaunchServices("services = {\n 123 0 application.example[123]\n 0 - custom service label\n}")
 	if err != nil || len(rows) != 2 || rows[1].ID != "custom service label" {

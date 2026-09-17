@@ -2,9 +2,11 @@ package dashboard
 
 import (
 	"context"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -61,10 +63,75 @@ func TestProcessesParsingFilteringAndTree(t *testing.T) {
 	if len(cycle) != 3 {
 		t.Fatal("cycle lost rows")
 	}
-	for _, raw := range []string{"bad row", "1 0 root NaN 100 R 00:00 cmd", "1 0 root 0.0 nope R 00:00 cmd", "1 0 root 0 1 R 00:00 x\n1 0 root 0 1 R 00:00 y"} {
+	for _, raw := range []string{"bad row", "1 0 root NaN 100 R 00:00 cmd", "1 0 root 0.0 nope R 00:00 cmd", "bad row\nworse row"} {
 		if _, err := parseProcesses(raw); err == nil {
 			t.Fatal("accepted malformed ps", raw)
 		}
+	}
+	if rows, err := parseProcesses(""); err != nil || len(rows) != 0 {
+		t.Fatal("empty ps output is not an error", rows, err)
+	}
+}
+
+func TestProcessParserSkipsOnlyTheBadRows(t *testing.T) {
+	rows, skipped, err := parseProcessesTolerant(processFixture + "garbage\n" + "1 0 root 0 1 R 00:00 duplicate pid\n")
+	if err != nil || len(rows) != 5 || skipped != 2 || rows[0].PID != 1 || rows[4].PID != 45 {
+		t.Fatalf("one bad row discarded the snapshot: %d rows, %d skipped, %v", len(rows), skipped, err)
+	}
+	for _, row := range rows {
+		if row.RateCPU {
+			t.Fatal("ps values must not be marked as interval rates")
+		}
+	}
+	if _, skipped, err := parseProcessesTolerant("bad\nworse"); err == nil || skipped != 2 {
+		t.Fatal("all-bad snapshot accepted", skipped, err)
+	}
+}
+
+func TestProcessCPUSamplerTurnsTicksIntoIntervalRates(t *testing.T) {
+	root := t.TempDir()
+	write := func(pid, utime, stime, start string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(root, pid), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := pid + " (fake daemon) S 1 1 1 0 -1 4194624 1000 0 3 0 " + utime + " " + stime + " 0 0 20 0 3 0 " + start + " 1 2048 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 0 -1 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
+		if err := os.WriteFile(filepath.Join(root, pid, "stat"), []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("100", "100", "50", "5000")
+	write("200", "10", "10", "7000")
+	sampler := newProcessCPUSampler(root)
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	rows := []hostProcess{{PID: 100, CPU: 7}, {PID: 200, CPU: 1}, {PID: 300, CPU: 2}}
+	sampler.apply(rows, t0)
+	if rows[0].CPU != 7 || rows[0].RateCPU || rows[1].CPU != 1 || rows[2].CPU != 2 || rows[2].RateCPU {
+		t.Fatalf("first sample must keep the ps estimate: %+v", rows)
+	}
+	if len(sampler.samples) != 2 {
+		t.Fatalf("unreadable PID 300 must not be remembered: %+v", sampler.samples)
+	}
+	// 150 ticks at 100 Hz over 3 s is half of one logical CPU.
+	write("100", "200", "100", "5000")
+	// Same PID, new start time: a different process, so no rate yet.
+	write("200", "1000", "1000", "7001")
+	rows = []hostProcess{{PID: 100, CPU: 7}, {PID: 200, CPU: 1}}
+	sampler.apply(rows, t0.Add(3*time.Second))
+	if !rows[0].RateCPU || math.Abs(rows[0].CPU-50) > 1e-9 {
+		t.Fatalf("interval rate incorrect: %+v", rows[0])
+	}
+	if rows[1].RateCPU || rows[1].CPU != 1 {
+		t.Fatalf("restarted PID inherited the old sample: %+v", rows[1])
+	}
+	// A repeated timestamp cannot produce a rate; the estimate is kept.
+	rows = []hostProcess{{PID: 100, CPU: 7}}
+	sampler.apply(rows, t0.Add(3*time.Second))
+	if rows[0].RateCPU {
+		t.Fatal("zero-length interval produced a rate")
+	}
+	if _, ok := sampler.samples[200]; ok {
+		t.Fatal("PID absent from the poll was not pruned")
 	}
 }
 
@@ -173,6 +240,123 @@ func TestFilesystemParsingAcrossPlatforms(t *testing.T) {
 			t.Fatal("accepted invalid df")
 		}
 	}
+	rows, skipped, err := parseMountsTolerant(diskFixture+"df: /run/user/1000/gvfs: Permission denied\n", "linux", false)
+	if err != nil || len(rows) != 3 || skipped != 1 {
+		t.Fatalf("one odd df row discarded the table: %d rows, %d skipped, %v", len(rows), skipped, err)
+	}
+	mac, skipped, err = parseMountsTolerant(macDiskFixture+"map auto_home 0 0 0 100% /System/Volumes/Data/home\n", "darwin", false)
+	if err != nil || len(mac) != 3 || skipped != 1 {
+		t.Fatalf("mac row without inode columns discarded the table: %d rows, %d skipped, %v", len(mac), skipped, err)
+	}
+}
+
+const mountInfoFixture = `24 29 0:22 / /sys rw,nosuid,nodev,noexec,relatime shared:7 - sysfs sysfs rw
+25 29 0:23 / /proc rw,nosuid,nodev,noexec,relatime shared:12 - proc proc rw
+26 29 0:5 / /dev rw,nosuid,relatime shared:2 - devtmpfs udev rw,size=16017752k,mode=755
+27 26 0:24 / /dev/pts rw,nosuid,noexec,relatime shared:3 - devpts devpts rw,gid=5,mode=620
+29 1 252:0 / / rw,relatime shared:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw
+33 24 0:28 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime shared:9 - cgroup2 cgroup2 rw,nsdelegate
+36 25 0:31 / /proc/sys/fs/binfmt_misc rw,relatime shared:13 - autofs systemd-1 rw,fd=32
+44 29 7:0 / /snap/core22/1748 ro,nodev,relatime shared:29 - squashfs /dev/loop0 ro,errors=continue
+60 29 8:17 / /media/Work\040Drive rw,relatime shared:60 - ext4 /dev/sdb1\011x rw
+61 29 8:33 / /media/Work\040Drive rw,relatime shared:61 - vfat /dev/sdc1 rw
+62 29 0:50 / /run/user/1000/doc rw,nosuid,nodev,relatime shared:62 - fuse.portal portal rw,user_id=1000
+63 29 0:51 / /run/user/1000/gvfs rw,nosuid,nodev,relatime shared:63 - fuse.gvfsd-fuse gvfsd-fuse rw,user_id=1000
+64 29 0:52 / /mnt/nas rw,relatime shared:64 - nfs4 nas:/export rw,vers=4.2
+645 109 0:4 mnt:[4026532389] /run/snapd/ns/docker.mnt rw - nsfs nsfs rw
+this line is not a mount
+`
+
+func TestMountInfoFiltersPseudoAndKeepsShadowingMount(t *testing.T) {
+	entries := parseMountInfo(mountInfoFixture)
+	var paths []string
+	for _, entry := range entries {
+		paths = append(paths, entry.Path)
+	}
+	want := "/dev / /snap/core22/1748 /media/Work Drive /mnt/nas"
+	if strings.Join(paths, " ") != want {
+		t.Fatalf("mount inventory\n got %q\nwant %q", strings.Join(paths, " "), want)
+	}
+	if entries[3].Source != "/dev/sdc1" || entries[3].Type != "vfat" {
+		t.Fatalf("shadowed mount point kept the earlier entry: %+v", entries[3])
+	}
+	if unescapeMountField(`/a\040b\011c\012d\134e\x`) != "/a b\tc\nd\\e\\x" {
+		t.Fatal(unescapeMountField(`/a\040b\011c\012d\134e\x`))
+	}
+	if entries[0].Source != "udev" || entries[1].Source != "/dev/mapper/ubuntu--vg-ubuntu--lv" {
+		t.Fatalf("sources mislocated: %+v", entries[:2])
+	}
+}
+
+func TestMountUsageMatchesDFArithmetic(t *testing.T) {
+	// df rounds Capacity up: 1 used, 2 available is 34%, not 33%.
+	if dfPercent(1, 2) != 34 || dfPercent(0, 5) != 0 || dfPercent(5, 0) != 100 || dfPercent(0, 0) != -1 || dfPercent(850000, 100000) != 90 {
+		t.Fatal(dfPercent(1, 2), dfPercent(0, 5), dfPercent(5, 0), dfPercent(0, 0), dfPercent(850000, 100000))
+	}
+	entry := mountEntry{Source: "/dev/root", Path: "/", Type: "ext4"}
+	m := mountUsage{BlockSize: 4096, Blocks: 250000, Bfree: 37500, Bavail: 25000, Files: 100, Ffree: 10}.mount(entry)
+	if m.Size != 1000000 || m.Used != 850000 || m.Free != 100000 || m.Percent != 90 || m.Inodes != 100 || m.InodeUsed != 90 || m.InodeFree != 10 || m.InodePercent != 90 || m.Source != "/dev/root" || m.Path != "/" {
+		t.Fatalf("df parity broken: %+v", m)
+	}
+	m = mountUsage{BlockSize: 1024, Blocks: 3, Bfree: 2, Bavail: 2}.mount(entry)
+	if m.Percent != 34 || m.Inodes != 0 || m.InodePercent != -1 {
+		t.Fatalf("ceil or inode-less filesystem incorrect: %+v", m)
+	}
+}
+
+func TestStatMountsReportsHungMountsWithoutBlockingTheView(t *testing.T) {
+	entries := []mountEntry{{Path: "/", Source: "/dev/root", Type: "ext4"}, {Path: "/mnt/nas", Source: "nas:/x", Type: "nfs4"}, {Path: "/run/user/1000/gvfs", Source: "gvfsd-fuse", Type: "fuse"}, {Path: "/proc/sys/fs/binfmt_misc", Type: "binfmt_misc"}, {Path: "/boot", Source: "/dev/sda2", Type: "ext4"}}
+	release := make(chan struct{})
+	defer close(release)
+	stat := func(path string) (mountUsage, error) {
+		switch path {
+		case "/mnt/nas":
+			<-release // A stale NFS mount never answers within the poll.
+			return mountUsage{}, nil
+		case "/run/user/1000/gvfs":
+			return mountUsage{}, syscall.EACCES
+		case "/proc/sys/fs/binfmt_misc":
+			return mountUsage{BlockSize: 4096}, nil
+		}
+		return mountUsage{BlockSize: 1024, Blocks: 100, Bfree: 50, Bavail: 40, Files: 10, Ffree: 5}, nil
+	}
+	start := time.Now()
+	rows, note := statMounts(context.Background(), entries, 50*time.Millisecond, stat)
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("hung mount stalled the poll")
+	}
+	if len(rows) != 2 || rows[0].Path != "/" || rows[1].Path != "/boot" || rows[0].Percent != 56 {
+		t.Fatalf("reachable mounts lost: %+v", rows)
+	}
+	if !strings.Contains(note, "unreachable: /mnt/nas") || !strings.Contains(note, "unreadable: /run/user/1000/gvfs") || strings.Contains(note, "binfmt") {
+		t.Fatalf("note: %q", note)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if rows, _ := statMounts(ctx, entries[1:2], time.Second, stat); len(rows) != 0 {
+		t.Fatal("cancelled context still waited for a hung mount")
+	}
+}
+
+func TestLinuxMountsReadWithoutDF(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("mountinfo is Linux-only")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "df"), []byte("#!/bin/sh\necho 'df must not be called' >&2\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	rows, note, err := collectMounts(context.Background(), "linux")
+	if err != nil {
+		t.Fatalf("collectMounts: %v (%s)", err, note)
+	}
+	for _, m := range rows {
+		if m.Path == "/" && m.Size > 0 && m.Percent >= 0 && m.Percent <= 100 {
+			return
+		}
+	}
+	t.Fatalf("root filesystem missing from %+v", rows)
 }
 
 func TestDeletedFilesRetainOwnersAndPaths(t *testing.T) {
@@ -200,6 +384,13 @@ func TestDeletedFilesRetainOwnersAndPaths(t *testing.T) {
 	}
 	if _, err := parseDeletedFiles("f3\x00tREG\x00"); err == nil {
 		t.Fatal("accepted ownerless file")
+	}
+	// A bad process record (and its files) and a file with an unreadable size
+	// are skipped individually; the good records survive.
+	tolerated := "pbad\x00cx\x00\nf9\x00tREG\x00D0x1\x00i1\x00s1\x00n/x\x00\n" + raw + "p44\x00cshell\x00u0\x00\nf7\x00tREG\x00D0x1\x00i102\x00sbig\x00n/tmp/b\x00\nf8\x00tREG\x00D0x1\x00i103\x00s10\x00n/tmp/c\x00\n"
+	files, skipped, err := parseDeletedFilesTolerant(tolerated)
+	if err != nil || len(files) != 4 || skipped != 2 || files[3].Path != "/tmp/c" || files[3].PID != 44 {
+		t.Fatalf("tolerant lsof parse: %d files, %d skipped, %v", len(files), skipped, err)
 	}
 }
 

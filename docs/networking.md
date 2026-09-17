@@ -7,7 +7,7 @@
 Press `3`, or choose **Actions → Ports and networking**, to inspect the host running Systemdoc. The page keeps four views:
 
 - **Ports** lists TCP listeners and bound UDP sockets, ordered by local port.
-- **Connections** lists all observed TCP and UDP sockets, including established and closing connections.
+- **Connections** lists all observed TCP and UDP sockets, including established and closing connections. Its card counts flows by state, most common first, so a `TIME-WAIT` or `CLOSE-WAIT` build-up is visible before the table is scrolled.
 - **Interfaces** lists host interfaces, addresses, flags, MTU and hardware address.
 - **Speed** shows live per-interface download and upload throughput plus cumulative byte counters.
 

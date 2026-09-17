@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 type hostProcess struct {
@@ -19,6 +21,38 @@ type hostProcess struct {
 	User, State, Elapsed, Command string
 	CPU                           float64
 	RSS                           int64 // KiB; -1 means unavailable.
+	// RateCPU is true when CPU is the share of one logical CPU used between the
+	// previous poll and this one (Linux /proc sampling). When false, CPU is the
+	// ps pcpu value: total CPU time divided by the process's lifetime.
+	RateCPU bool
+}
+
+// joinNote concatenates the non-empty diagnostics with the status separator.
+func joinNote(parts ...string) string {
+	var kept []string
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" {
+			kept = append(kept, strings.TrimSpace(part))
+		}
+	}
+	return strings.Join(kept, " · ")
+}
+
+// skippedNote describes tolerated parser rows; "" when nothing was skipped.
+func skippedNote(skipped int, what string) string {
+	if skipped <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d unrecognised %s skipped", skipped, what)
+}
+
+// allRowsFailed is the tolerant parsers' shared failure rule: a snapshot is
+// rejected only when it had rows and none of them parsed.
+func allRowsFailed(parsed, skipped int, what string) error {
+	if parsed == 0 && skipped > 0 {
+		return fmt.Errorf("no %s could be parsed (%d unrecognised)", what, skipped)
+	}
+	return nil
 }
 
 // Split fixed leading columns while retaining spaces in commands and paths.
@@ -36,8 +70,17 @@ func leadingFields(line string, count int) ([]string, string) {
 	return fields, strings.TrimLeft(line, " \t")
 }
 
+// parseProcesses keeps the historical signature: it fails only when the
+// snapshot had rows and none of them parsed.
 func parseProcesses(raw string) ([]hostProcess, error) {
-	var rows []hostProcess
+	rows, _, err := parseProcessesTolerant(raw)
+	return rows, err
+}
+
+// parseProcessesTolerant skips rows it cannot read (a truncated line, a
+// duplicate PID from a racing ps) and reports how many, so one odd row no
+// longer blanks the whole Process Explorer.
+func parseProcessesTolerant(raw string) (rows []hostProcess, skipped int, err error) {
 	seen := map[int]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
 		if strings.TrimSpace(line) == "" {
@@ -45,7 +88,8 @@ func parseProcesses(raw string) ([]hostProcess, error) {
 		}
 		f, command := leadingFields(line, 7)
 		if len(f) != 7 || command == "" {
-			return nil, fmt.Errorf("unrecognized ps row")
+			skipped++
+			continue
 		}
 		pid, e1 := strconv.Atoi(f[0])
 		ppid, e2 := strconv.Atoi(f[1])
@@ -58,12 +102,13 @@ func parseProcesses(raw string) ([]hostProcess, error) {
 			rss, e4 = -1, nil
 		}
 		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || pid < 0 || ppid < 0 || cpu < -1 || rss < -1 || math.IsNaN(cpu) || math.IsInf(cpu, 0) || seen[pid] {
-			return nil, fmt.Errorf("invalid ps values")
+			skipped++
+			continue
 		}
 		seen[pid] = true
-		rows = append(rows, hostProcess{pid, ppid, f[2], f[5], f[6], clean(command), cpu, rss})
+		rows = append(rows, hostProcess{PID: pid, PPID: ppid, User: f[2], State: f[5], Elapsed: f[6], Command: clean(command), CPU: cpu, RSS: rss})
 	}
-	return rows, nil
+	return rows, skipped, allRowsFailed(len(rows), skipped, "ps rows")
 }
 
 func collectProcesses(ctx context.Context) ([]hostProcess, error) {
@@ -71,11 +116,66 @@ func collectProcesses(ctx context.Context) ([]hostProcess, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ps: %w %s", err, diagnostic)
 	}
-	rows, err := parseProcesses(raw)
+	rows, _, err := parseProcessesTolerant(raw)
 	if err != nil {
 		return nil, err
 	}
-	return omitProcessCollector(rows, os.Getpid()), nil
+	rows = omitProcessCollector(rows, os.Getpid())
+	processCPURates(rows)
+	return rows, nil
+}
+
+// processCPUSample is one /proc/PID/stat reading kept between polls.
+type processCPUSample struct {
+	ticks, start uint64
+	at           time.Time
+}
+
+// processCPUSampler turns ps's lifetime-average pcpu into an interval rate.
+// ps reports cputime/elapsed, so a process that was busy an hour ago outranks
+// one busy now; comparing /proc/PID/stat ticks between polls fixes that.
+// The map is keyed by PID and validated by start time so a reused PID never
+// inherits another process's counters.
+type processCPUSampler struct {
+	mu      sync.Mutex
+	root    string
+	samples map[int]processCPUSample
+}
+
+var processCPU = newProcessCPUSampler("/proc")
+
+func newProcessCPUSampler(root string) *processCPUSampler {
+	return &processCPUSampler{root: root, samples: map[int]processCPUSample{}}
+}
+
+// apply rewrites CPU for every row that has a comparable previous sample and
+// sets RateCPU on it. First-seen processes, restarted PIDs and unreadable stat
+// files keep the ps estimate so the table is never blank. Entries for PIDs
+// absent from rows are pruned.
+func (s *processCPUSampler) apply(rows []hostProcess, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := make(map[int]processCPUSample, len(rows))
+	for i := range rows {
+		raw, err := os.ReadFile(filepath.Join(s.root, strconv.Itoa(rows[i].PID), "stat"))
+		if err != nil {
+			continue
+		}
+		_, fields, err := parseTaskStat(strings.TrimSpace(string(raw)))
+		if err != nil {
+			continue
+		}
+		current := processCPUSample{ticks: statUint(fields, 14) + statUint(fields, 15), start: statUint(fields, 22), at: now}
+		next[rows[i].PID] = current
+		previous, ok := s.samples[rows[i].PID]
+		if !ok || previous.start != current.start || !now.After(previous.at) || current.ticks < previous.ticks {
+			continue
+		}
+		seconds := now.Sub(previous.at).Seconds()
+		rows[i].CPU = float64(current.ticks-previous.ticks) / clockTicksPerSecond / seconds * 100
+		rows[i].RateCPU = true
+	}
+	s.samples = next
 }
 
 func omitProcessCollector(rows []hostProcess, parentPID int) []hostProcess {
@@ -190,57 +290,253 @@ func dfNumber(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSuffix(s, "%"), 10, 64)
 }
 
+// parseMounts keeps the historical signature: a missing header, or a table
+// whose every row is unreadable, is an error; a single odd row is skipped.
 func parseMounts(raw, platform string, inodeOnly bool) ([]hostMount, error) {
+	rows, _, err := parseMountsTolerant(raw, platform, inodeOnly)
+	return rows, err
+}
+
+// parseMountsTolerant reads POSIX df output and skips rows it cannot read.
+func parseMountsTolerant(raw, platform string, inodeOnly bool) (rows []hostMount, skipped int, err error) {
 	lines := strings.Split(strings.TrimSpace(raw), "\n")
 	if len(lines) == 0 || !strings.HasPrefix(lines[0], "Filesystem") {
-		return nil, fmt.Errorf("missing df header")
+		return nil, 0, fmt.Errorf("missing df header")
 	}
-	var rows []hostMount
 	for _, line := range lines[1:] {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		f := dfRow.FindStringSubmatch(strings.TrimSpace(line))
-		if f == nil {
-			return nil, fmt.Errorf("unrecognized df row")
-		}
-		values := make([]int64, 4)
-		for i := range values {
-			v, err := dfNumber(f[i+2])
-			if err != nil {
-				return nil, fmt.Errorf("invalid df count: %w", err)
-			}
-			values[i] = v
-		}
-		m := hostMount{Source: clean(f[1]), Path: clean(f[6]), Size: values[0], Used: values[1], Free: values[2], Percent: int(values[3]), InodePercent: -1, Inodes: -1, InodeUsed: -1, InodeFree: -1}
-		if inodeOnly {
-			m.Inodes, m.InodeUsed, m.InodeFree, m.InodePercent = m.Size, m.Used, m.Free, m.Percent
-		} else if platform == "darwin" {
-			inodes, path := leadingFields(f[6], 3)
-			if len(inodes) != 3 || path == "" {
-				return nil, fmt.Errorf("missing macOS inode columns")
-			}
-			for i, s := range inodes {
-				v, err := dfNumber(s)
-				if err != nil {
-					return nil, fmt.Errorf("invalid macOS inode count: %w", err)
-				}
-				values[i] = v
-			}
-			m.InodeUsed, m.InodeFree, m.InodePercent, m.Path = values[0], values[1], int(values[2]), clean(path)
-			if values[0] >= 0 && values[1] >= 0 && values[0] <= math.MaxInt64-values[1] {
-				m.Inodes = values[0] + values[1]
-			}
-		}
-		if m.Inodes == 0 {
-			m.InodePercent = -1
+		m, ok := parseDFRow(strings.TrimSpace(line), platform, inodeOnly)
+		if !ok {
+			skipped++
+			continue
 		}
 		rows = append(rows, m)
 	}
-	return rows, nil
+	return rows, skipped, allRowsFailed(len(rows), skipped, "df rows")
 }
 
+func parseDFRow(line, platform string, inodeOnly bool) (hostMount, bool) {
+	f := dfRow.FindStringSubmatch(line)
+	if f == nil {
+		return hostMount{}, false
+	}
+	values := make([]int64, 4)
+	for i := range values {
+		v, err := dfNumber(f[i+2])
+		if err != nil {
+			return hostMount{}, false
+		}
+		values[i] = v
+	}
+	m := hostMount{Source: clean(f[1]), Path: clean(f[6]), Size: values[0], Used: values[1], Free: values[2], Percent: int(values[3]), InodePercent: -1, Inodes: -1, InodeUsed: -1, InodeFree: -1}
+	if inodeOnly {
+		m.Inodes, m.InodeUsed, m.InodeFree, m.InodePercent = m.Size, m.Used, m.Free, m.Percent
+	} else if platform == "darwin" {
+		inodes, path := leadingFields(f[6], 3)
+		if len(inodes) != 3 || path == "" {
+			return hostMount{}, false
+		}
+		for i, s := range inodes {
+			v, err := dfNumber(s)
+			if err != nil {
+				return hostMount{}, false
+			}
+			values[i] = v
+		}
+		m.InodeUsed, m.InodeFree, m.InodePercent, m.Path = values[0], values[1], int(values[2]), clean(path)
+		if values[0] >= 0 && values[1] >= 0 && values[0] <= math.MaxInt64-values[1] {
+			m.Inodes = values[0] + values[1]
+		}
+	}
+	if m.Inodes == 0 {
+		m.InodePercent = -1
+	}
+	return m, true
+}
+
+// mountEntry is one row of /proc/self/mountinfo that Storage should show.
+type mountEntry struct {
+	Source, Path, Type string
+}
+
+// mountUsage is the platform-neutral subset of statfs(2) the Storage view
+// needs. BlockSize is the fragment size df uses (f_frsize).
+type mountUsage struct {
+	BlockSize, Blocks, Bfree, Bavail, Files, Ffree uint64
+}
+
+// pseudoFilesystems are kernel interfaces, not storage. tmpfs, devtmpfs and
+// efivarfs are deliberately absent because df lists them.
+var pseudoFilesystems = map[string]bool{
+	"proc": true, "sysfs": true, "cgroup": true, "cgroup2": true, "devpts": true,
+	"securityfs": true, "debugfs": true, "tracefs": true, "configfs": true,
+	"fusectl": true, "pstore": true, "bpf": true, "autofs": true, "mqueue": true,
+	"hugetlbfs": true, "binfmt_misc": true, "rpc_pipefs": true, "nsfs": true,
+	"selinuxfs": true, "fuse.portal": true, "fuse.gvfsd-fuse": true, "ramfs": true,
+}
+
+// unescapeMountField decodes the octal escapes (\040 space, \011 tab, \012
+// newline, \134 backslash) the kernel uses for paths in mountinfo.
+func unescapeMountField(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var out strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+3 < len(s) && isOctal(s[i+1]) && isOctal(s[i+2]) && isOctal(s[i+3]) {
+			out.WriteByte((s[i+1]-'0')<<6 | (s[i+2]-'0')<<3 | (s[i+3] - '0'))
+			i += 3
+			continue
+		}
+		out.WriteByte(s[i])
+	}
+	return out.String()
+}
+
+func isOctal(c byte) bool { return c >= '0' && c <= '7' }
+
+// parseMountInfo lists the mounts df would show, in mount order. Pseudo
+// filesystems are dropped, and when several mounts share a mount point only
+// the last one is kept, because it is the one shadowing the others.
+func parseMountInfo(raw string) []mountEntry {
+	var entries []mountEntry
+	index := map[string]int{}
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(line)
+		separator := -1
+		for i := 6; i < len(fields); i++ {
+			if fields[i] == "-" {
+				separator = i
+				break
+			}
+		}
+		if separator < 0 || separator+2 >= len(fields) {
+			continue
+		}
+		entry := mountEntry{Path: unescapeMountField(fields[4]), Type: fields[separator+1], Source: unescapeMountField(fields[separator+2])}
+		if pseudoFilesystems[entry.Type] || entry.Path == "" {
+			continue
+		}
+		if i, ok := index[entry.Path]; ok {
+			entries[i] = entry
+			continue
+		}
+		index[entry.Path] = len(entries)
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// dfPercent reproduces df's Capacity column: used/(used+avail) rounded up,
+// or -1 when there is nothing to divide by.
+func dfPercent(used, avail int64) int {
+	if used < 0 || avail < 0 || used+avail <= 0 {
+		return -1
+	}
+	return int((used*100 + used + avail - 1) / (used + avail))
+}
+
+// mount converts a statfs reading into the KiB-based row df would print.
+func (u mountUsage) mount(entry mountEntry) hostMount {
+	kib := func(blocks uint64) int64 { return int64(blocks * u.BlockSize / 1024) }
+	m := hostMount{Source: clean(entry.Source), Path: clean(entry.Path), Size: kib(u.Blocks), Used: kib(u.Blocks - min(u.Blocks, u.Bfree)), Free: kib(u.Bavail)}
+	m.Percent = dfPercent(m.Used, m.Free)
+	m.Inodes, m.InodeFree, m.InodeUsed = int64(u.Files), int64(u.Ffree), int64(u.Files-min(u.Files, u.Ffree))
+	m.InodePercent = -1
+	if u.Files > 0 {
+		m.InodePercent = dfPercent(m.InodeUsed, m.InodeFree)
+	}
+	return m
+}
+
+// statMounts reads every mount concurrently. Each mount gets its own
+// goroutine so a stale NFS or FUSE mount that never answers statfs cannot hang
+// the poll: after timeout it is reported as unreachable and omitted, and its
+// goroutine is abandoned (a blocked statfs cannot be interrupted; the leak is
+// bounded by the number of stuck mounts, and it returns whenever the kernel
+// finally gives up). Mounts with no blocks are dropped, as df does without -a.
+func statMounts(ctx context.Context, entries []mountEntry, timeout time.Duration, stat func(string) (mountUsage, error)) ([]hostMount, string) {
+	type reply struct {
+		usage mountUsage
+		err   error
+	}
+	replies := make([]chan reply, len(entries))
+	for i, entry := range entries {
+		replies[i] = make(chan reply, 1)
+		go func(path string, out chan reply) {
+			usage, err := stat(path)
+			out <- reply{usage, err}
+		}(entry.Path, replies[i])
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	var rows []hostMount
+	var unreachable, unreadable []string
+	accept := func(entry mountEntry, r reply) {
+		if r.err != nil {
+			unreadable = append(unreadable, entry.Path)
+			return
+		}
+		if r.usage.Blocks == 0 {
+			return
+		}
+		rows = append(rows, r.usage.mount(entry))
+	}
+	expired := false
+	for i, entry := range entries {
+		if expired {
+			// The shared deadline has passed: take whatever has already
+			// answered, report the rest without waiting.
+			select {
+			case r := <-replies[i]:
+				accept(entry, r)
+			default:
+				unreachable = append(unreachable, entry.Path)
+			}
+			continue
+		}
+		select {
+		case r := <-replies[i]:
+			accept(entry, r)
+		case <-deadline.C:
+			expired = true
+			unreachable = append(unreachable, entry.Path)
+		case <-ctx.Done():
+			expired = true
+			unreachable = append(unreachable, entry.Path)
+		}
+	}
+	var notes []string
+	if len(unreachable) > 0 {
+		notes = append(notes, "unreachable: "+strings.Join(unreachable, ", "))
+	}
+	if len(unreadable) > 0 {
+		notes = append(notes, "unreadable: "+strings.Join(unreadable, ", "))
+	}
+	return rows, joinNote(notes...)
+}
+
+// mountStatTimeout bounds how long one poll waits for any single mount.
+const mountStatTimeout = 2 * time.Second
+
 func collectMounts(ctx context.Context, platform string) ([]hostMount, string, error) {
+	if platform != "darwin" && nativeMountsSupported {
+		raw, err := os.ReadFile("/proc/self/mountinfo")
+		if err != nil {
+			return nil, "", fmt.Errorf("mountinfo: %w", err)
+		}
+		entries := parseMountInfo(string(raw))
+		if len(entries) == 0 {
+			return nil, "", fmt.Errorf("mountinfo listed no filesystems")
+		}
+		rows, note := statMounts(ctx, entries, mountStatTimeout, statfsMount)
+		if len(rows) == 0 && ctx.Err() != nil {
+			return nil, note, ctx.Err()
+		}
+		return rows, note, nil
+	}
 	args := []string{"-Pk"}
 	if platform == "darwin" {
 		args = []string{"-Pki"}
@@ -249,17 +545,18 @@ func collectMounts(ctx context.Context, platform string) ([]hostMount, string, e
 	if err != nil {
 		return nil, "", fmt.Errorf("df: %w %s", err, diagnostic)
 	}
-	rows, err := parseMounts(raw, platform, false)
+	rows, skipped, err := parseMountsTolerant(raw, platform, false)
+	note := joinNote(diagnostic, skippedNote(skipped, "df rows"))
 	if err != nil || platform == "darwin" {
-		return rows, diagnostic, err
+		return rows, note, err
 	}
 	raw, inodeNote, inodeErr := networkCommand(ctx, "df", "-Pi")
 	if inodeErr != nil {
-		return rows, "Inodes unavailable: " + inodeErr.Error() + " " + inodeNote, nil
+		return rows, joinNote(note, "Inodes unavailable: "+inodeErr.Error()+" "+inodeNote), nil
 	}
-	inodes, inodeErr := parseMounts(raw, platform, true)
+	inodes, inodeSkipped, inodeErr := parseMountsTolerant(raw, platform, true)
 	if inodeErr != nil {
-		return rows, inodeErr.Error(), nil
+		return rows, joinNote(note, inodeErr.Error()), nil
 	}
 	index := map[string]hostMount{}
 	for _, m := range inodes {
@@ -270,7 +567,7 @@ func collectMounts(ctx context.Context, platform string) ([]hostMount, string, e
 			rows[i].Inodes, rows[i].InodeUsed, rows[i].InodeFree, rows[i].InodePercent = v.Inodes, v.InodeUsed, v.InodeFree, v.InodePercent
 		}
 	}
-	return rows, diagnostic, nil
+	return rows, joinNote(note, skippedNote(inodeSkipped, "df -i rows")), nil
 }
 
 type deletedFile struct {
@@ -281,18 +578,34 @@ type deletedFile struct {
 
 func (f deletedFile) key() string { return fmt.Sprintf("%d/%s/%s/%s", f.PID, f.FD, f.Device, f.Inode) }
 
+// parseDeletedFiles keeps the historical signature: output that is not lsof
+// field format, or whose every record is unreadable, is an error.
 func parseDeletedFiles(raw string) ([]deletedFile, error) {
+	rows, _, err := parseDeletedFilesTolerant(raw)
+	return rows, err
+}
+
+// parseDeletedFilesTolerant skips a process record with a bad PID (and the
+// files under it), a file record with no owner, and a file with an unreadable
+// size, counting each once, so one odd record cannot blank the view.
+func parseDeletedFilesTolerant(raw string) (rows []deletedFile, skipped int, err error) {
 	if strings.TrimSpace(raw) != "" && (!strings.Contains(raw, "\x00") || !strings.HasPrefix(strings.TrimLeft(raw, "\n"), "p")) {
-		return nil, fmt.Errorf("unrecognized lsof field output")
+		return nil, 0, fmt.Errorf("unrecognized lsof field output")
 	}
-	var rows []deletedFile
 	owner := deletedFile{}
+	badOwner := false
 	file := deletedFile{Size: -1}
 	kind := ""
 	flush := func() {
 		if file.FD != "" && kind == "REG" {
 			rows = append(rows, file)
 		}
+	}
+	drop := func() {
+		if file.FD != "" {
+			skipped++
+		}
+		file = deletedFile{Size: -1}
 	}
 	for _, field := range strings.Split(raw, "\x00") {
 		field = strings.TrimLeft(field, "\n")
@@ -304,8 +617,10 @@ func parseDeletedFiles(raw string) ([]deletedFile, error) {
 		case 'p':
 			flush()
 			pid, err := strconv.Atoi(v)
-			if err != nil || pid <= 0 {
-				return nil, fmt.Errorf("invalid lsof PID")
+			badOwner = err != nil || pid <= 0
+			if badOwner {
+				skipped++
+				pid = 0
 			}
 			owner = deletedFile{PID: pid}
 			file = deletedFile{Size: -1}
@@ -315,14 +630,19 @@ func parseDeletedFiles(raw string) ([]deletedFile, error) {
 		case 'u':
 			owner.User = clean(v)
 		case 'f':
-			if owner.PID == 0 {
-				return nil, fmt.Errorf("lsof file has no owner")
-			}
 			flush()
+			file = deletedFile{Size: -1}
+			kind = ""
+			if owner.PID == 0 {
+				// Already counted when the owner record itself was bad.
+				if !badOwner {
+					skipped++
+				}
+				continue
+			}
 			file = owner
 			file.FD = v
 			file.Size = -1
-			kind = ""
 		case 't':
 			kind = v
 		case 'D':
@@ -334,13 +654,14 @@ func parseDeletedFiles(raw string) ([]deletedFile, error) {
 		case 's':
 			size, err := strconv.ParseInt(v, 10, 64)
 			if err != nil || size < 0 {
-				return nil, fmt.Errorf("invalid lsof size")
+				drop()
+				continue
 			}
 			file.Size = size
 		}
 	}
 	flush()
-	return rows, nil
+	return rows, skipped, allRowsFailed(len(rows), skipped, "lsof records")
 }
 
 func collectDeletedFiles(ctx context.Context) ([]deletedFile, string, error) {
@@ -352,11 +673,11 @@ func collectDeletedFiles(ctx context.Context) ([]deletedFile, string, error) {
 	if err != nil && raw == "" && note != "" {
 		return nil, "", fmt.Errorf("lsof: %s", note)
 	}
-	rows, parseErr := parseDeletedFiles(raw)
+	rows, skipped, parseErr := parseDeletedFilesTolerant(raw)
 	if err != nil && raw != "" {
 		note = "Partial lsof result. " + note
 	}
-	return rows, note, parseErr
+	return rows, joinNote(note, skippedNote(skipped, "lsof records")), parseErr
 }
 
 func hostBytes(value int64, kib bool) string {
