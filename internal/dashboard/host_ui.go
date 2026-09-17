@@ -288,7 +288,7 @@ func (w *workspace) hostPage(tab int) {
 	h.search.SetFieldBackgroundColor(tcell.GetColor(p.surface)).SetFieldTextColor(tcell.GetColor(p.text)).SetLabelColor(tcell.GetColor(p.accent))
 	h.search.SetChangedFunc(func(query string) { h.query[h.view()] = query; h.render() })
 	h.search.SetDoneFunc(func(tcell.Key) { w.app.SetFocus(h.table) })
-	h.AddItem(h.header, 1, 0, false).AddItem(nav, 1, 0, false).AddItem(h.summary, 5, 0, false).AddItem(viewBar, 1, 0, false).AddItem(h.search, 1, 0, false).AddItem(h.table, 0, 1, true).AddItem(h.detail, 7, 0, false).AddItem(h.status, 2, 0, false).AddItem(h.footer, 1, 0, false)
+	h.AddItem(h.header, 1, 0, false).AddItem(nav, 1, 0, false).AddItem(h.summary, 5, 0, false).AddItem(viewBar, 1, 0, false).AddItem(h.search, 1, 0, false).AddItem(h.table, 0, 1, true).AddItem(h.detail, 7, 0, false).AddItem(h.status, 1, 0, false).AddItem(h.footer, 1, 0, false)
 	h.table.SetSelectionChangedFunc(func(row, col int) { h.selectRow(row) })
 	h.table.SetSelectedFunc(func(row, col int) { h.inspect() })
 	h.SetInputCapture(h.input)
@@ -550,7 +550,11 @@ func (h *hostPage) render() {
 		columns = min(columns, 2)
 	}
 	for col, label := range headers[:columns] {
-		h.table.SetCell(0, col, tview.NewTableCell(label).SetSelectable(false).SetTextColor(tcell.GetColor(p.accent)).SetAttributes(tcell.AttrBold))
+		cell := tview.NewTableCell(label).SetSelectable(false).SetTextColor(tcell.GetColor(p.accent)).SetAttributes(tcell.AttrBold)
+		if numericColumn[label] {
+			cell.SetAlign(tview.AlignRight)
+		}
+		h.table.SetCell(0, col, cell)
 	}
 	selected := 1
 	for i, row := range h.rows {
@@ -559,6 +563,9 @@ func (h *hostPage) render() {
 				value = " " + value
 			}
 			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(p.text)).SetMaxWidth(16)
+			if numericColumn[headers[col]] {
+				cell.SetAlign(tview.AlignRight)
+			}
 			if col == 0 {
 				cell.SetExpansion(1).SetMaxWidth(max(12, h.width/2))
 			}
@@ -579,6 +586,10 @@ func (h *hostPage) render() {
 	h.selectRow(selected)
 	h.updateStatus()
 }
+
+// numericColumn names the table columns whose values are figures, so they are
+// right-aligned and read as a column of numbers rather than ragged text.
+var numericColumn = map[string]bool{"RSS": true, "PID": true, "PPID": true, "ELAPSED": true, "AVAILABLE": true, "SIZE": true, "USED SPACE": true, "INODES": true, "UID": true, "FD": true}
 
 func (h *hostPage) selectRow(row int) {
 	previous := h.selected
@@ -852,7 +863,11 @@ func (h *hostPage) updateStatus() {
 	if h.failure[v] != "" {
 		colour = h.w.palette().error
 	}
-	h.status.SetText(fmt.Sprintf(" %d rows · %s · poll %ds\n [%s]%s[-]", len(h.rows), state, h.pollSeconds(), colour, tview.Escape(clean(strings.ReplaceAll(note, "\n", " · ")))))
+	// One line: the counts first, then the caveat, cut with an ellipsis rather
+	// than wrapped, so every host page spends the same two rows on its footer.
+	lead := fmt.Sprintf(" %d rows · %s · poll %ds · ", len(h.rows), state, h.pollSeconds())
+	note = ellipsize(clean(strings.ReplaceAll(note, "\n", " · ")), max(0, h.width-displayWidth(lead)-1))
+	h.status.SetText(fmt.Sprintf("%s[%s]%s[-]", tview.Escape(lead), colour, tview.Escape(note)))
 }
 
 func (h *hostPage) report() string {
@@ -979,7 +994,7 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		memoryHeadline = fmt.Sprintf("%.0f%% host · %s", usage.memPercent, hostBytesPair(usage.memUsed, usage.memTotal))
 	}
 	return []string{"COMMAND", "CPU", "RSS", "PID", "USER", "STATE", "PPID", "ELAPSED"}, [3]hostCard{
-		{title: "PROCESSES", headline: fmt.Sprintf("%d observed", len(h.processes)), visual: signalMeter(float64(running), float64(len(h.processes)), 20, glyphs), note: fmt.Sprintf("%d running · %d zombies", running, zombies)},
+		{title: "PROCESSES", headline: fmt.Sprintf("%d observed", len(h.processes)), visual: signalMeter(float64(running), float64(len(h.processes)), 20, glyphs), note: fmt.Sprintf("%d on a CPU at sample · %d zombies", running, zombies)},
 		{title: "HOST CPU", headline: fmt.Sprintf("%s · %.1f%% summed", cpuHeadline, cpu), visual: cpuTrend, chart: true},
 		{title: "HOST MEMORY", headline: fmt.Sprintf("%s · %s RSS", memoryHeadline, hostBytes(rss, true)), visual: memoryTrend, chart: true},
 	}

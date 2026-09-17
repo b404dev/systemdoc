@@ -208,8 +208,15 @@ func (w *workspace) streamPanel(title, commandLine, name string, build func(cont
 	go func() {
 		defer w.background.Done()
 		streamCommand(ctx, cmd, name, func(text, ending string) {
-			next := prepareLogSnapshot(text, ending, *style.Load())
-			count := strings.Count(text, "\n")
+			// sysdig lines collapse into runs and take the event-aware painter;
+			// the journal follow keeps the shared log treatment.
+			var next logSnapshot
+			if name == "sysdig" {
+				next = sysdigSnapshot(text, ending, *style.Load())
+			} else {
+				next = prepareLogSnapshot(text, ending, *style.Load())
+			}
+			count := strings.Count(next.text, "\n")
 			if ctx.Err() != nil {
 				return
 			}

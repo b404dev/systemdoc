@@ -79,9 +79,23 @@ func hueOf(p palette, colour string) palette {
 
 // cellGauge puts a compact meter next to a figure inside a table cell. Table
 // cells are escaped, so the bar carries its meaning through the cell's own
-// colour rather than through markup.
+// colour rather than through markup. Only the filled part is drawn: a track
+// on every row of a 500-process table was visual noise, and the figure sits
+// in a fixed-width slot so the column still aligns.
 func cellGauge(figure string, value, maximum float64, width int, mode string) string {
-	return fmt.Sprintf("%-5s %s", figure, gaugeMeter(value, maximum, width, mode))
+	filledGlyph := "\u2588"
+	switch graphMode(mode) {
+	case "braille":
+		filledGlyph = "\u283f"
+	case "ascii":
+		filledGlyph = "#"
+	}
+	filled := 0
+	if maximum > 0 {
+		filled = int(value / maximum * float64(width))
+	}
+	filled = max(0, min(width, filled))
+	return fmt.Sprintf("%-6s %s%s", figure, strings.Repeat(filledGlyph, filled), strings.Repeat(" ", width-filled))
 }
 
 // exposureOf describes how far a listening socket can be reached from. It reads

@@ -4,6 +4,16 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+### Interface
+
+- Telemetry trails floor every non-zero reading at one level, so a host running at a few percent shows a visible line on the fixed 0–100 scale instead of an empty chart.
+- Table meters draw only their filled part: the dotted track that appeared on every row of a 500-process table was noise. Figures in RSS, PID, size, inode and throughput columns are right-aligned so they read as columns.
+- Overlays and rails no longer cut text mid-word: the Control Deck and sysdig palette widen to the terminal and end long descriptions with an ellipsis, and the Storyline rail drops the oldest event rather than truncating the newest.
+- Host page footers are one status line plus one key line, so every page spends the same rows at the bottom. The Processes card says how many processes were on a CPU at the sample instant instead of "running".
+- Syslog-style timestamps (`Sep 14 16:17:12`) are dimmed like ISO stamps, so the journal tail inside a status block reads like the Logs tab.
+- System Constellation is a relationship map rather than a list: dependencies are grouped by unit kind, failed and attention units come first, each dependency carries its own state from the current inventory, and every unit is shown (capped per group) instead of stopping at 23 lines.
+- The sysdig live stream collapses consecutive identical events into one line with a count, dims event numbers and timestamps, colours enter and exit markers and error results, and exports the collapsed text.
+
 ### Fixes
 
 - The host and network command runner now sets a wait delay, so an `lsof` helper child holding the pipe after a timeout can no longer leave a page's busy flag stuck and stop it refreshing for the rest of the session.

@@ -17,12 +17,20 @@ func (w *workspace) choose(page, title string, choices []choice) {
 	search := tview.NewInputField().SetLabel(" Search ")
 	list := tview.NewList().ShowSecondaryText(true)
 	list.SetBorder(true).SetTitle(tview.Escape(title) + " · Escape closes ")
+	// The overlay takes as much width as the terminal allows up to 118 cells;
+	// a description that still does not fit ends in an ellipsis instead of
+	// being cut mid-word at the frame.
+	width := 118
+	if w.lastWidth > 0 {
+		width = min(width, max(40, w.lastWidth-4))
+	}
+	inner := width - 4
 	populate := func(query string) {
 		list.Clear()
 		for _, item := range choices {
 			if matchesChoice(item.name+" "+item.description, query) {
 				item := item
-				list.AddItem(tview.Escape(item.name), tview.Escape(item.description), 0, func() { w.pages.RemovePage(page); w.app.SetFocus(focus); item.run() })
+				list.AddItem(tview.Escape(ellipsize(item.name, inner)), tview.Escape(ellipsize(item.description, inner)), 0, func() { w.pages.RemovePage(page); w.app.SetFocus(focus); item.run() })
 			}
 		}
 	}
@@ -53,7 +61,7 @@ func (w *workspace) choose(page, title string, choices []choice) {
 		return e
 	})
 	populate("")
-	w.pages.AddPage(page, centered(panel, 86, 24), true, true)
+	w.pages.AddPage(page, centered(panel, width, 26), true, true)
 	w.app.SetFocus(search)
 }
 

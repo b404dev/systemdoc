@@ -146,7 +146,7 @@ func (w *workspace) networkPage() {
 	copy(n.modeButtons[:], modes)
 	n.deckButton = deck
 	n.suiteNavigation = commandBar
-	n.AddItem(n.header, 1, 0, false).AddItem(commandBar, 1, 0, false).AddItem(n.summary, 5, 0, false).AddItem(navigation, 1, 0, false).AddItem(n.search, 1, 0, false).AddItem(n.table, 0, 1, true).AddItem(n.detail, 8, 0, false).AddItem(n.status, 2, 0, false).AddItem(footer, 1, 0, false)
+	n.AddItem(n.header, 1, 0, false).AddItem(commandBar, 1, 0, false).AddItem(n.summary, 5, 0, false).AddItem(navigation, 1, 0, false).AddItem(n.search, 1, 0, false).AddItem(n.table, 0, 1, true).AddItem(n.detail, 8, 0, false).AddItem(n.status, 1, 0, false).AddItem(footer, 1, 0, false)
 	n.table.SetSelectionChangedFunc(func(row, col int) { n.updateDetail(row) })
 	n.table.SetSelectedFunc(func(row, col int) {
 		if n.view >= 2 {
@@ -427,7 +427,11 @@ func (n *networkPage) render() {
 	n.detail.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorderColor(tcell.GetColor(p.accent)).SetTitleColor(tcell.GetColor(p.accent))
 	n.updateSummary()
 	for col, title := range headers {
-		n.table.SetCell(0, col, tview.NewTableCell(title).SetSelectable(false).SetTextColor(tcell.GetColor(p.accent)).SetAttributes(tcell.AttrBold))
+		cell := tview.NewTableCell(title).SetSelectable(false).SetTextColor(tcell.GetColor(p.accent)).SetAttributes(tcell.AttrBold)
+		if networkNumeric[title] {
+			cell.SetAlign(tview.AlignRight)
+		}
+		n.table.SetCell(0, col, cell)
 	}
 	selectedRow := 1
 	add := func(values []string, key string) {
@@ -437,6 +441,9 @@ func (n *networkPage) render() {
 				value = " " + value // Leave room for the shared selection marker.
 			}
 			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(p.text)).SetBackgroundColor(tcell.GetColor(p.background)).SetMaxWidth(12)
+			if networkNumeric[headers[col]] {
+				cell.SetAlign(tview.AlignRight)
+			}
 			if headers[col] == "LOCAL ADDRESS" || headers[col] == "REMOTE ADDRESS" || headers[col] == "ADDRESSES" {
 				cell.SetExpansion(2).SetMaxWidth(max(14, min(34, width/3)))
 			}
@@ -657,6 +664,9 @@ func (n *networkPage) updateSummary() {
 	}
 }
 
+// networkNumeric names the figure columns so they right-align like the host pages.
+var networkNumeric = map[string]bool{"PID": true, "MTU": true, "DOWNLOAD": true, "UPLOAD": true, "TOTAL RX": true, "TOTAL TX": true}
+
 func networkField(label, value, colour string) string {
 	return fmt.Sprintf("[%s]%s[-] %s", colour, label, tview.Escape(clean(value)))
 }
@@ -722,7 +732,9 @@ func (n *networkPage) updateStatus() {
 	if n.view == 3 {
 		source = n.snapshot.CounterSource
 	}
-	n.status.SetText(fmt.Sprintf(" [%s::b]%d rows[-::-] · [%s]%s[-] · poll %ds · %s\n [%s]%s[-]", n.w.palette().accent, count, stateColour, state, n.w.settings.RefreshSeconds, tview.Escape(clean(source)), n.w.palette().muted, tview.Escape(strings.ReplaceAll(note, "\n", " · "))))
+	lead := fmt.Sprintf(" %d rows · %s · poll %ds · %s · ", count, state, n.w.settings.RefreshSeconds, clean(source))
+	note = ellipsize(clean(strings.ReplaceAll(note, "\n", " · ")), max(0, n.lastWidth-displayWidth(lead)-1))
+	n.status.SetText(fmt.Sprintf(" [%s::b]%d rows[-::-] · [%s]%s[-] · poll %ds · %s · [%s]%s[-]", n.w.palette().accent, count, stateColour, state, n.w.settings.RefreshSeconds, tview.Escape(clean(source)), n.w.palette().muted, tview.Escape(note)))
 }
 func (n *networkPage) report() string {
 	host, _ := os.Hostname()

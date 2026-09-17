@@ -430,6 +430,9 @@ func (w *workspace) renderTable() {
 		if col == 0 {
 			cell.SetExpansion(1)
 		}
+		if col == 2 || col == 3 {
+			cell.SetAlign(tview.AlignRight)
+		}
 		w.table.SetCell(0, col, cell)
 	}
 	selection := 1
@@ -467,6 +470,10 @@ func (w *workspace) renderTable() {
 				}
 			}
 			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(colour))
+			if col == 2 || col == 3 {
+				// Figures read as a column when their units line up.
+				cell.SetAlign(tview.AlignRight)
+			}
 			if col == 0 {
 				cell.SetExpansion(1).SetMaxWidth(64)
 			} else if col == 6 {

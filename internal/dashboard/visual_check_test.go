@@ -117,7 +117,7 @@ func TestVisualReview(t *testing.T) {
 		h.render()
 	}
 	if os.Getenv("SYSTEMDOC_VISUAL_MODE") == "constellation" {
-		body := constellationText(w.current(), 0, "nginx.service\nnetwork-online.target\npostgresql.service\nredis.service\nsystem.slice\n", w.settings.NerdIcons)
+		body := constellationText(w.current(), 0, "nginx.service\nnetwork-online.target\npostgresql.service\nredis.service\nsystem.slice\n", w.settings.NerdIcons, w.inventoryStates())
 		view := textView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 		view.SetText(richOutput(body, 4, w.palette())).SetBorder(true).SetTitle(" SYSTEM CONSTELLATION · sampled 18:53:51 · Esc returns ")
 		w.pages.AddPage("constellation-fixture", centered(view, 124, 34), true, true)

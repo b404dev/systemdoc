@@ -107,7 +107,21 @@ func (w *workspace) updateStoryline() {
 	for left, right := 0, len(parts)-1; left < right; left, right = left+1, right-1 {
 		parts[left], parts[right] = parts[right], parts[left]
 	}
-	w.storyline.SetText(fmt.Sprintf(" [%s::b]%s STORYLINE[-::-]  %s  [%s]→ NOW[-]", p.accent, w.icon(iconStoryline), strings.Join(parts, fmt.Sprintf(" [%s]──[-] ", p.muted)), p.accent))
+	// Fit the rail: drop the oldest event while the line overflows, and mark
+	// the cut with an ellipsis, so the newest event is always whole.
+	compose := func(parts []string, elided bool) string {
+		lead := fmt.Sprintf(" [%s::b]%s STORYLINE[-::-]  ", p.accent, w.icon(iconStoryline))
+		if elided {
+			lead += fmt.Sprintf("[%s]…[-] ", p.muted)
+		}
+		return lead + strings.Join(parts, fmt.Sprintf(" [%s]──[-] ", p.muted)) + fmt.Sprintf("  [%s]→ NOW[-]", p.accent)
+	}
+	text := compose(parts, false)
+	for w.lastWidth > 0 && len(parts) > 1 && tview.TaggedStringWidth(text) > w.lastWidth {
+		parts = parts[1:]
+		text = compose(parts, true)
+	}
+	w.storyline.SetText(text)
 }
 
 func (w *workspace) storylineView() {

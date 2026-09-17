@@ -436,7 +436,7 @@ func TestKubernetesPodsInTheWorkspace(t *testing.T) {
 	if card := w.selectionCard.GetText(true); !strings.Contains(card, "namespace shop · deployment/web") {
 		t.Fatal(card)
 	}
-	text := constellationText(w.current(), 1, "", false)
+	text := constellationText(w.current(), 1, "", false, nil)
 	if !strings.Contains(text, "namespace  shop") || !strings.Contains(text, "owner      deployment/web") {
 		t.Fatal(text)
 	}

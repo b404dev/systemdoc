@@ -105,8 +105,9 @@ func signalArea(values []float64, fixedMaximum float64, mode string) string {
 		}
 	}
 	maximum = max(maximum, 1)
+	resolved := graphMode(mode)
 	blocks := []rune(" ▁▂▃▄▅▆▇█")
-	if graphMode(mode) == "braille" {
+	if resolved == "braille" {
 		blocks = []rune(" ⡀⡄⡆⡇⣇⣧⣷⣿")
 	}
 	rows := [2]strings.Builder{}
@@ -118,8 +119,14 @@ func signalArea(values []float64, fixedMaximum float64, mode string) string {
 			}
 			level := int(value / maximum * 16)
 			level = max(0, min(16, level))
+			// A live reading is never drawn as nothing: on the fixed 0–100 host
+			// scale a 5% machine is one sixteenth of a level, and without this
+			// floor a healthy host showed an empty chart.
+			if value > 0 && level == 0 {
+				level = 1
+			}
 			cell := max(0, min(8, level-row*8))
-			if graphMode(mode) == "ascii" {
+			if resolved == "ascii" {
 				if cell == 0 {
 					rows[1-row].WriteRune('.')
 				} else {
