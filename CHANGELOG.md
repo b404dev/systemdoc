@@ -18,6 +18,12 @@ Changes are recorded here before being assigned a release tag.
 - `ps`, `df`, `ss` and `launchctl` rows in an unrecognised shape are skipped and counted rather than discarding the snapshot.
 - Installed unit files are listed once a minute rather than on every poll; an explicit refresh re-reads them.
 
+### Performance
+
+- A full 160×44 frame costs about 18% less. Colour blends are read from lock-free per-pair tables resolved once per panel rather than through two lock round trips per cell, the surface gradient's row and column factors are precomputed per panel, panel frames iterate only their perimeter, gradient text parses its two colours once instead of once per glyph, and the resolved palette is memoised. A golden test compares every cell of the old and new painters, so the picture is unchanged.
+- The one-second dashboard tick draws a frame only when host telemetry has changed since the last one; it previously redrew the whole screen every second whether or not anything moved. Inventory results still draw themselves as they arrive.
+- The splash wordmark is rendered once per palette and only the spinner glyph is spliced in on each animation tick; log and sysdig stream pollers compare a write generation instead of copying and comparing up to 2 MiB every 400 ms; Process Explorer builds the selection band only for the selected row instead of for all 500 processes on every keystroke.
+
 ### Interface
 
 - Telemetry trails floor every non-zero reading at one level, so a host running at a few percent shows a visible line on the fixed 0–100 scale instead of an empty chart.

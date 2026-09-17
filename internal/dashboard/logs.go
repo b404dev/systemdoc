@@ -67,7 +67,9 @@ func followLogs(ctx context.Context, mode int, user bool, item workload, update 
 	go func() { done <- cmd.Run() }()
 	ticker := time.NewTicker(400 * time.Millisecond)
 	defer ticker.Stop()
-	previous := ""
+	// The buffer can hold a megabyte; compare write generations rather than
+	// copying and diffing it four hundred milliseconds apart.
+	previous := uint64(0)
 	published := false
 	for {
 		select {
@@ -82,12 +84,12 @@ func followLogs(ctx context.Context, mode int, user bool, item workload, update 
 			update(output.String(), message)
 			return
 		case <-ticker.C:
-			text := output.String()
-			if !published || text != previous {
-				published = true
-				previous = text
-				update(text, "")
+			if published && output.Generation() == previous {
+				continue
 			}
+			text, generation := output.Snapshot()
+			published, previous = true, generation
+			update(text, "")
 		}
 	}
 }

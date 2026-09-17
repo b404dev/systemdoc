@@ -3,6 +3,7 @@ package dashboard
 import (
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/rivo/tview"
@@ -34,14 +35,34 @@ func ellipsize(text string, width int) string {
 
 func displayWidth(text string) int { return runewidth.StringWidth(text) }
 
+// palette is asked for a dozen times a frame and from background workers, so
+// the resolved theme is memoised against the inputs that shape it. The cache
+// is one atomic pointer: any goroutine can read or replace it safely.
+type paletteKey struct {
+	theme              int
+	accent, background string
+}
+
+type resolvedPalette struct {
+	key     paletteKey
+	palette palette
+}
+
+var paletteCache atomic.Pointer[resolvedPalette]
+
 func (w *workspace) palette() palette {
-	p := themes[w.theme]
-	if hexColour.MatchString(w.settings.Accent) {
-		p.accent = w.settings.Accent
+	key := paletteKey{theme: w.theme, accent: w.settings.Accent, background: w.settings.Background}
+	if cached := paletteCache.Load(); cached != nil && cached.key == key {
+		return cached.palette
 	}
-	if hexColour.MatchString(w.settings.Background) {
-		p.background = w.settings.Background
+	p := themes[key.theme]
+	if hexColour.MatchString(key.accent) {
+		p.accent = key.accent
 	}
+	if hexColour.MatchString(key.background) {
+		p.background = key.background
+	}
+	paletteCache.Store(&resolvedPalette{key: key, palette: p})
 	return p
 }
 

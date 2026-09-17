@@ -360,7 +360,7 @@ func streamCommand(ctx context.Context, cmd *exec.Cmd, name string, update func(
 	go func() { done <- cmd.Run() }()
 	ticker := time.NewTicker(400 * time.Millisecond)
 	defer ticker.Stop()
-	previous := ""
+	previous := uint64(0)
 	for {
 		select {
 		case err := <-done:
@@ -378,11 +378,12 @@ func streamCommand(ctx context.Context, cmd *exec.Cmd, name string, update func(
 			update(text, ending)
 			return
 		case <-ticker.C:
-			text := output.String()
-			if text != previous {
-				previous = text
-				update(text, "")
+			if output.Generation() == previous {
+				continue
 			}
+			text, generation := output.Snapshot()
+			previous = generation
+			update(text, "")
 		}
 	}
 }

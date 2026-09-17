@@ -1,9 +1,9 @@
 package dashboard
 
 import (
-	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lucasb-eyer/go-colorful"
@@ -15,74 +15,102 @@ import (
 // in CIE Lab so a step of the gradient is a step in perceived colour, not in
 // channel arithmetic, and clamps back into the sRGB gamut for the terminal.
 func blend(a, b tcell.Color, amount float64) tcell.Color {
-	// Lab mixing costs about a microsecond and paintSurfaces asks for it once
-	// per cell per frame, so the answer is memoised per colour pair. Amount is
-	// quantised to 256 steps: finer than a 24-bit terminal can show across any
-	// gradient the interface draws, and it bounds the table.
-	step := int(max(0, min(1, amount))*255 + 0.5)
-	key := blendKey{a.Hex(), b.Hex()}
-	blendCache.RLock()
-	table, ok := blendCache.tables[key]
-	blendCache.RUnlock()
-	if !ok {
-		table = &blendTable{}
-		blendCache.Lock()
-		if existing, found := blendCache.tables[key]; found {
-			table = existing
-		} else {
-			blendCache.tables[key] = table
-		}
-		blendCache.Unlock()
-	}
-	if colour, ready := table.entry(step); ready {
-		return colour
-	}
-	from, to := colorfulOf(a), colorfulOf(b)
-	mixed := from.BlendLab(to, float64(step)/255).Clamped()
-	r, g, bl := mixed.RGB255()
-	colour := tcell.NewRGBColor(int32(r), int32(g), int32(bl))
-	table.store(step, colour)
-	return colour
+	return blendTableFor(a, b).at(blendStep(amount))
+}
+
+// blendStep quantises an amount to 256 steps: finer than a 24-bit terminal
+// can show across any gradient the interface draws, and it bounds the table.
+func blendStep(amount float64) int {
+	return int(max(0, min(1, amount))*255 + 0.5)
 }
 
 type blendKey struct{ from, to int32 }
 
-// blendTable fills lazily: a gradient only pays for the steps it uses.
+// blendTable memoises one colour pair. Lab mixing costs about a microsecond
+// and paintSurfaces asks for it once per cell per frame, so each step is
+// computed once and then read without a lock: a slot holds the tcell.Color
+// itself, which always carries ColorValid, so zero means "not yet computed".
+// Two goroutines racing on one slot store the same deterministic value.
 type blendTable struct {
-	mu     sync.RWMutex
-	ready  [256]bool
-	colour [256]tcell.Color
+	from, to tcell.Color
+	cells    [256]atomic.Uint64
 }
 
-func (t *blendTable) entry(step int) (tcell.Color, bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.colour[step], t.ready[step]
+func (t *blendTable) at(step int) tcell.Color {
+	if v := t.cells[step].Load(); v != 0 {
+		return tcell.Color(v)
+	}
+	mixed := colorfulOf(t.from).BlendLab(colorfulOf(t.to), float64(step)/255).Clamped()
+	r, g, b := mixed.RGB255()
+	colour := tcell.NewRGBColor(int32(r), int32(g), int32(b))
+	t.cells[step].Store(uint64(colour))
+	return colour
 }
 
-func (t *blendTable) store(step int, colour tcell.Color) {
-	t.mu.Lock()
-	t.colour[step], t.ready[step] = colour, true
-	t.mu.Unlock()
+// The table registry is copy-on-write: readers load one pointer and index an
+// immutable map, writers (a new colour pair, rare after the first frame)
+// serialise on the mutex and publish a fresh copy.
+var blendTables struct {
+	sync.Mutex
+	current atomic.Pointer[map[blendKey]*blendTable]
 }
 
-var blendCache = struct {
-	sync.RWMutex
-	tables map[blendKey]*blendTable
-}{tables: map[blendKey]*blendTable{}}
+func blendTableFor(a, b tcell.Color) *blendTable {
+	key := blendKey{a.Hex(), b.Hex()}
+	if tables := blendTables.current.Load(); tables != nil {
+		if table, ok := (*tables)[key]; ok {
+			return table
+		}
+	}
+	blendTables.Lock()
+	defer blendTables.Unlock()
+	previous := blendTables.current.Load()
+	if previous != nil {
+		if table, ok := (*previous)[key]; ok {
+			return table
+		}
+	}
+	next := make(map[blendKey]*blendTable, 1)
+	if previous != nil {
+		next = make(map[blendKey]*blendTable, len(*previous)+1)
+		for k, v := range *previous {
+			next[k] = v
+		}
+	}
+	table := &blendTable{from: a, to: b}
+	next[key] = table
+	blendTables.current.Store(&next)
+	return table
+}
 
 func colorfulOf(c tcell.Color) colorful.Color {
 	r, g, b := c.RGB()
 	return colorful.Color{R: float64(r) / 255, G: float64(g) / 255, B: float64(b) / 255}
 }
 
+// writeColourTag appends "[#rrggbb]" without going through fmt.
+func writeColourTag(out *strings.Builder, colour tcell.Color) {
+	const digits = "0123456789abcdef"
+	hex := colour.Hex()
+	var tag [9]byte
+	tag[0], tag[1], tag[8] = '[', '#', ']'
+	for i := 7; i >= 2; i-- {
+		tag[i] = digits[hex&0xf]
+		hex >>= 4
+	}
+	out.Write(tag[:])
+}
+
 // gradientText is for trusted, single-cell decorative glyphs only.
 func gradientText(value, from, to string) string {
 	runes := []rune(value)
+	table := blendTableFor(tcell.GetColor(from), tcell.GetColor(to))
+	span := float64(max(1, len(runes)-1))
 	var out strings.Builder
+	out.Grow(len(runes)*13 + 3)
 	for i, r := range runes {
-		colour := blend(tcell.GetColor(from), tcell.GetColor(to), float64(i)/float64(max(1, len(runes)-1)))
-		fmt.Fprintf(&out, "[#%06x]%c", colour.Hex(), r)
+		writeColourTag(&out, table.at(blendStep(float64(i)/span)))
+		out.WriteRune(r)
 	}
 	out.WriteString("[-]")
 	return out.String()
@@ -124,7 +152,17 @@ func (d *luminousDashboard) Draw(screen tcell.Screen) {
 // every panel takes one tint and the header one hue, because a terminal
 // without 24-bit colour would otherwise snap each blend step to a different
 // palette entry and draw the gradient as blocks.
+//
+// The light falling on a panel is separable: amount = strength × horizontal(col)
+// × vertical(row). Each panel resolves its blend tables and the two factor
+// vectors once, so a cell costs a read, a multiply and a table index. The
+// factors are kept as float64 and multiplied in the same order as the original
+// per-cell expression, so every quantised step is bit-identical to it.
 func paintSurfaces(screen tcell.Screen, root *tview.Flex, p palette, header *tview.TextView, table *tview.Table, rails map[*tview.Box]string, flat bool) {
+	sw, sh := screen.Size()
+	accent, glow := tcell.GetColor(p.accent), tcell.GetColor(p.glow)
+	surface, background := tcell.GetColor(p.surface), tcell.GetColor(p.background)
+	accentGlow := blendTableFor(accent, glow)
 	var visit func(tview.Primitive)
 	visit = func(primitive tview.Primitive) {
 		_, _, width, height := primitive.GetRect()
@@ -154,32 +192,80 @@ func paintSurfaces(screen tcell.Screen, root *tview.Flex, p palette, header *tvi
 			colour = p.accent
 		}
 		x, y, width, height := box.GetRect()
-		sw, sh := screen.Size()
+		x0, x1 := max(0, x), min(sw, x+width)
+		y0, y1 := max(0, y), min(sh, y+height)
+		if x0 >= x1 || y0 >= y1 {
+			return
+		}
 		strength := 0.025
 		if rail {
 			strength = 0.22
 		} else if primitive.HasFocus() {
 			strength = 0.09
 		}
-		// tcell.GetColor parses a "#rrggbb" string each call. Resolve the
-		// palette once per panel, not once per cell: this loop runs for every
-		// cell on the screen every frame.
-		accent, glow := tcell.GetColor(p.accent), tcell.GetColor(p.glow)
-		surface, background := tcell.GetColor(p.surface), tcell.GetColor(p.background)
 		tint := tcell.GetColor(colour)
-		for row := max(0, y); row < min(sh, y+height); row++ {
-			for col := max(0, x); col < min(sw, x+width); col++ {
-				if rail && (col == x || col == x+width-1 || row == y+height-1) {
+		surfaceTint, backgroundTint := blendTableFor(surface, tint), blendTableFor(background, tint)
+		isTable := primitive == table
+
+		if primitive == header {
+			// The header hue varies with the column only, so resolve each
+			// column's hue and its background wash once for all header rows.
+			var hueBuffer, washBuffer [paintSpan]tcell.Color
+			hues, washes := colourSpan(&hueBuffer, x1-x0), colourSpan(&washBuffer, x1-x0)
+			for col := x0; col < x1; col++ {
+				position := float64(col-x) / float64(max(1, width-1))
+				if flat {
+					position = 0.5
+				}
+				hue := accentGlow.at(blendStep(position))
+				hues[col-x0] = hue
+				washes[col-x0] = blendTableFor(background, hue).at(blendStep(0.22))
+			}
+			rule := height >= 3
+			for row := y0; row < y1; row++ {
+				for col := x0; col < x1; col++ {
+					if rail && (col == x || col == x+width-1 || row == y+height-1) {
+						continue
+					}
+					r, combining, style, _ := screen.GetContent(col, row)
+					_, bg, _ := style.Decompose()
+					if bg != surface && bg != background {
+						continue
+					}
+					style = style.Background(washes[col-x0])
+					if rule && row == y+height-1 {
+						r, combining = '━', nil
+						style = style.Foreground(hues[col-x0]).Background(background)
+					}
+					screen.SetContent(col, row, r, combining, style)
+				}
+			}
+			return
+		}
+
+		flatStep := blendStep(strength * 0.5)
+		var horizontalBuffer, verticalBuffer [paintSpan]float64
+		horizontal, vertical := factorSpan(&horizontalBuffer, x1-x0), factorSpan(&verticalBuffer, y1-y0)
+		for col := x0; col < x1; col++ {
+			horizontal[col-x0] = strength * (1 - float64(col-x)/float64(max(1, width-1)))
+		}
+		for row := y0; row < y1; row++ {
+			vertical[row-y0] = 1 - 0.7*float64(row-y)/float64(max(1, height-1))
+		}
+		for row := y0; row < y1; row++ {
+			lastRow := row == y+height-1
+			for col := x0; col < x1; col++ {
+				if rail && (col == x || col == x+width-1 || lastRow) {
 					continue
 				}
 				r, combining, style, _ := screen.GetContent(col, row)
 				_, bg, _ := style.Decompose()
-				if primitive == table && bg == accent {
+				if isTable && bg == accent {
 					position := float64(col-x-1) / float64(max(1, width-3))
 					if flat {
 						position = 0.5
 					}
-					selection := blend(accent, glow, 0.55*max(0, min(1, position)))
+					selection := accentGlow.at(blendStep(0.55 * max(0, min(1, position))))
 					if col == x+1 {
 						r, combining = '▸', nil
 					}
@@ -187,32 +273,46 @@ func paintSurfaces(screen tcell.Screen, root *tview.Flex, p palette, header *tvi
 					continue
 				}
 				// Preserve matches and explicit log backgrounds.
-				if bg != surface && bg != background {
+				var pair *blendTable
+				switch bg {
+				case surface:
+					pair = surfaceTint
+				case background:
+					pair = backgroundTint
+				default:
 					continue
 				}
-				amount := strength * (1 - float64(col-x)/float64(max(1, width-1))) * (1 - 0.7*float64(row-y)/float64(max(1, height-1)))
-				if flat {
-					amount = strength * 0.5
+				step := flatStep
+				if !flat {
+					step = blendStep(horizontal[col-x0] * vertical[row-y0])
 				}
-				if primitive == header {
-					position := float64(col-x) / float64(max(1, width-1))
-					if flat {
-						position = 0.5
-					}
-					hue := blend(accent, glow, position)
-					style = style.Background(blend(background, hue, 0.22))
-					if height >= 3 && row == y+height-1 {
-						r, combining = '━', nil
-						style = style.Foreground(hue).Background(background)
-					}
-					screen.SetContent(col, row, r, combining, style)
-					continue
+				// Writing an unchanged cell back is a no-op for the buffer but
+				// not for the screen lock, so skip it.
+				if next := style.Background(pair.at(step)); next != style {
+					screen.SetContent(col, row, r, combining, next)
 				}
-				screen.SetContent(col, row, r, combining, style.Background(blend(bg, tint, amount)))
 			}
 		}
 	}
 	visit(root)
+}
+
+// paintSpan is the widest panel whose per-column and per-row factors fit in
+// stack scratch; anything wider (an unusually large terminal) allocates.
+const paintSpan = 512
+
+func factorSpan(buffer *[paintSpan]float64, n int) []float64 {
+	if n <= len(buffer) {
+		return buffer[:n]
+	}
+	return make([]float64, n)
+}
+
+func colourSpan(buffer *[paintSpan]tcell.Color, n int) []tcell.Color {
+	if n <= len(buffer) {
+		return buffer[:n]
+	}
+	return make([]tcell.Color, n)
 }
 
 // Light lives inside each panel's bounds, so adjacent panes and overlays never
@@ -225,38 +325,57 @@ func (w *workspace) illuminatePanel(box *tview.Box, focused func() bool, colour 
 	box.SetDrawFunc(func(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
 		p := w.palette()
 		base, accent := tcell.GetColor(p.surface), tcell.GetColor(colour(p))
+		frame := blendTableFor(base, accent)
+		railStyle := tcell.StyleDefault.Background(tcell.GetColor(p.background))
+		lit := focused != nil && focused()
 		sw, sh := screen.Size()
-		for row := max(0, y); row < min(sh, y+height); row++ {
+		x0, x1 := max(0, x), min(sw, x+width)
+		y0, y1 := max(0, y), min(sh, y+height)
+		top, bottom, left, right := y, y+height-1, x, x+width-1
+		paint := func(col, row int) {
 			vertical := 1 - float64(row-y)/float64(max(1, height-1))
-			for col := max(0, x); col < min(sw, x+width); col++ {
-				if row != y && row != y+height-1 && col != x && col != x+width-1 {
-					continue
+			horizontal := 1 - float64(col-x)/float64(max(1, width-1))
+			if w.limitedColours {
+				horizontal, vertical = 0.5, 0.5
+			}
+			r, combining, style, _ := screen.GetContent(col, row)
+			style = style.Background(base)
+			if rail && (row == bottom || col == left || col == right) {
+				screen.SetContent(col, row, ' ', nil, railStyle)
+				return
+			}
+			// Keep title lettering bright; only fade the frame itself.
+			switch r {
+			case '╭', '╮', '╰', '╯', '─', '│':
+				intensity := 0.12 + 0.22*horizontal*vertical
+				if lit {
+					intensity = 0.30 + 0.70*horizontal*vertical
 				}
-				horizontal := 1 - float64(col-x)/float64(max(1, width-1))
-				if w.limitedColours {
-					horizontal, vertical = 0.5, 0.5
+				if rail && row == top {
+					r = '━'
+					intensity = 0.25 + 0.75*horizontal
 				}
-				r, combining, style, _ := screen.GetContent(col, row)
-				style = style.Background(base)
-				if rail && (row == y+height-1 || col == x || col == x+width-1) {
-					screen.SetContent(col, row, ' ', nil, tcell.StyleDefault.Background(tcell.GetColor(p.background)))
-					continue
-				}
-				if row == y || row == y+height-1 || col == x || col == x+width-1 {
-					// Keep title lettering bright; only fade the frame itself.
-					if strings.ContainsRune("╭╮╰╯─│", r) {
-						intensity := 0.12 + 0.22*horizontal*vertical
-						if focused != nil && focused() {
-							intensity = 0.30 + 0.70*horizontal*vertical
-						}
-						if rail && row == y {
-							r = '━'
-							intensity = 0.25 + 0.75*horizontal
-						}
-						style = style.Foreground(blend(base, accent, intensity))
-					}
-				}
-				screen.SetContent(col, row, r, combining, style)
+				style = style.Foreground(frame.at(blendStep(intensity)))
+			}
+			screen.SetContent(col, row, r, combining, style)
+		}
+		// Only the perimeter is lit; the interior belongs to the widget.
+		if top >= y0 && top < y1 {
+			for col := x0; col < x1; col++ {
+				paint(col, top)
+			}
+		}
+		if bottom != top && bottom >= y0 && bottom < y1 {
+			for col := x0; col < x1; col++ {
+				paint(col, bottom)
+			}
+		}
+		for row := max(y0, top+1); row < min(y1, bottom); row++ {
+			if left >= x0 && left < x1 {
+				paint(left, row)
+			}
+			if right != left && right >= x0 && right < x1 {
+				paint(right, row)
 			}
 		}
 		if rail {

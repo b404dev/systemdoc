@@ -19,6 +19,9 @@ type tailBuffer struct {
 	mu    sync.Mutex
 	data  []byte
 	limit int
+	// writes counts non-empty writes, so a poller can tell whether anything
+	// arrived since its last look without copying the buffer to compare.
+	writes uint64
 }
 
 // outputLimit resolves a tailBuffer limit; zero means the default 1 MiB.
@@ -43,9 +46,22 @@ func (b *tailBuffer) Write(p []byte) (int, error) {
 		}
 		b.data = append(b.data, p...)
 	}
+	if n > 0 {
+		b.writes++
+	}
 	return n, nil
 }
 func (b *tailBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return string(b.data) }
+
+// Generation advances with every non-empty write.
+func (b *tailBuffer) Generation() uint64 { b.mu.Lock(); defer b.mu.Unlock(); return b.writes }
+
+// Snapshot copies the retained output together with the generation it is at.
+func (b *tailBuffer) Snapshot() (string, uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.data), b.writes
+}
 
 type operation struct {
 	Target, Command, Output, Status string

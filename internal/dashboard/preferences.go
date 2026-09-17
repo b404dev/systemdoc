@@ -3,6 +3,8 @@ package dashboard
 import (
 	"fmt"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -163,14 +165,45 @@ func (w *workspace) splash() {
 	w.pages.AddPage("splash", centered(view, 82, 24), true, true)
 }
 
+// The splash is re-rendered on every spinner tick, but only the spinner
+// changes: the wordmark and gradients are a few hundred blend lookups and tag
+// writes that depend on the palette, icon set and polling interval alone. The
+// body is rendered once per distinct set of inputs with a slot where the
+// spinner goes, and each tick splices the current frame into it.
+type splashKey struct {
+	palette palette
+	nerd    bool
+	refresh int
+	manager string
+}
+
+type splashBody struct {
+	key  splashKey
+	text string
+}
+
+var splashCache atomic.Pointer[splashBody]
+
+const splashSpinnerSlot = "\x00"
+
 func (w *workspace) splashText() string {
-	p := w.palette()
-	eye := gradientText("───────────  "+w.icon(iconEye)+"  ───────────", p.accent, p.glow)
 	frames := []rune("◐◓◑◒")
 	spinner := frames[(time.Now().UnixMilli()/180)%int64(len(frames))]
-	return fmt.Sprintf("%s\n%s\n\n%s\n[%s]SYSTEM OBSERVATORY[-]\n\n[%s]%s OBSERVE[-]  ·  [%s]%s INSPECT[-]  ·  [%s]%s ACT[-]\n\n[%s::b]01 %s SERVICES[-::-]   [%s::b]02 %s CONTAINERS[-::-]   [%s::b]03 %s NETWORK[-::-]\n[%s::b]04 %s PROCESSES[-::-]  [%s::b]05 %s STORAGE[-::-]\n\n[%s::b]%c[-::-] Connecting to %s and Docker  ·  polling every %ds\n[%s]PRESS ANY KEY TO ENTER[-]",
+	return strings.Replace(w.splashBodyText(), splashSpinnerSlot, string(spinner), 1)
+}
+
+func (w *workspace) splashBodyText() string {
+	p := w.palette()
+	key := splashKey{palette: p, nerd: w.settings.NerdIcons, refresh: w.settings.RefreshSeconds, manager: serviceManager()}
+	if cached := splashCache.Load(); cached != nil && cached.key == key {
+		return cached.text
+	}
+	eye := gradientText("───────────  "+w.icon(iconEye)+"  ───────────", p.accent, p.glow)
+	text := fmt.Sprintf("%s\n%s\n\n%s\n[%s]SYSTEM OBSERVATORY[-]\n\n[%s]%s OBSERVE[-]  ·  [%s]%s INSPECT[-]  ·  [%s]%s ACT[-]\n\n[%s::b]01 %s SERVICES[-::-]   [%s::b]02 %s CONTAINERS[-::-]   [%s::b]03 %s NETWORK[-::-]\n[%s::b]04 %s PROCESSES[-::-]  [%s::b]05 %s STORAGE[-::-]\n\n[%s::b]%s[-::-] Connecting to %s and Docker  ·  polling every %ds\n[%s]PRESS ANY KEY TO ENTER[-]",
 		wordmarkBlock("SYSTEMDOC", p.accent, p.glow), eye, gradientText("S Y S T E M D O C", p.glow, p.accent), p.muted,
 		p.accent, w.icon(iconEye), p.glow, w.icon(iconSearch), p.warning, w.icon(iconActions),
 		p.success, w.icon(iconServices), p.accent, w.icon(iconContainers), p.glow, w.icon(iconNetwork), p.warning, w.icon(iconProcesses), p.success, w.icon(iconStorage),
-		p.accent, spinner, tview.Escape(serviceManager()), w.settings.RefreshSeconds, p.muted)
+		p.accent, splashSpinnerSlot, tview.Escape(key.manager), key.refresh, p.muted)
+	splashCache.Store(&splashBody{key: key, text: text})
+	return text
 }

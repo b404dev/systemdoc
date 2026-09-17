@@ -80,10 +80,13 @@ type hostRow struct {
 	key    string
 	cells  []string
 	detail string
-	// rich is the selection band's presentation of the same facts: trusted
-	// colour tags around already-escaped values. detail stays plain because
-	// the full-details view and the exported report reuse it verbatim.
-	rich    string
+	// rich renders the selection band's presentation of the same facts:
+	// trusted colour tags around already-escaped values. It is built on demand
+	// for the selected row only; a table of hundreds of processes is re-sorted
+	// on every keystroke and width change and would otherwise pay for gauges
+	// nobody sees. detail stays plain because the full-details view and the
+	// exported report reuse it verbatim.
+	rich    func() string
 	tint    map[int]string
 	pid     int
 	warning bool
@@ -601,8 +604,8 @@ func (h *hostPage) selectRow(row int) {
 	}
 	r := h.rows[row-1]
 	h.selected = r.key
-	if r.rich != "" {
-		h.detail.SetText(r.rich)
+	if r.rich != nil {
+		h.detail.SetText(r.rich())
 	} else {
 		h.detail.SetText(tview.Escape(r.detail))
 	}
@@ -947,27 +950,8 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		if h.width >= 100 && p.CPU >= 0 {
 			cpuCell = cellGauge(cpuText, p.CPU, 100, 6, glyphs)
 		}
-		// A zombie is a state to notice, not a level of resource pressure.
-		stateHue := pal.success
-		stateText := "running"
-		if !strings.HasPrefix(p.State, "R") {
-			stateHue, stateText = pal.muted, "sleeping"
-		}
-		if strings.HasPrefix(p.State, "Z") {
-			stateHue, stateText = pal.error, "zombie · parent has not reaped it"
-		}
-		cpuGauge := fmt.Sprintf("[%s]CPU     no reading[-]", pal.muted)
-		if p.CPU >= 0 {
-			cpuGauge = gaugeLine("CPU", p.CPU, 100, 20, hueOf(pal, pressureHue(pal, int(p.CPU))), pal, glyphs, cpuText, "100% = one logical CPU")
-		}
-		memoryGauge := fmt.Sprintf("[%s]MEMORY  no reading[-]", pal.muted)
-		if p.RSS >= 0 && memoryCeiling > 0 {
-			memoryGauge = gaugeLine("MEMORY", float64(p.RSS), float64(memoryCeiling), 20, hueOf(pal, hue), pal, glyphs, hostBytes(p.RSS, true), "RSS · largest observed process sets the scale")
-		}
-		rich := fmt.Sprintf("[%s::b]%s[-::-]\n%s\n%s\n[%s]PID[-] [%s::b]%d[-::-]  [%s]%s[-]  [%s::b] %s [-::-]  [%s]elapsed %s · parent %d %s[-]",
-			hue, tview.Escape(clean(p.Command)), cpuGauge, memoryGauge,
-			pal.muted, hue, p.PID, pal.muted, tview.Escape(clean(p.User)), stateHue, tview.Escape(clean(stateText)),
-			pal.muted, tview.Escape(clean(p.Elapsed)), p.PPID, tview.Escape(clean(available(parents[p.PPID]))))
+		parent := parents[p.PPID]
+		rich := func() string { return processRich(pal, glyphs, hue, p, parent, memoryCeiling) }
 		h.rows = append(h.rows, hostRow{key: strconv.Itoa(p.PID), cells: []string{command, cpuCell, hostBytes(p.RSS, true), strconv.Itoa(p.PID), p.User, p.State, strconv.Itoa(p.PPID), p.Elapsed}, detail: detail, rich: rich, tint: map[int]string{1: pressureHue(pal, int(max(0, p.CPU)))}, pid: p.PID, warning: strings.HasPrefix(p.State, "Z")})
 	}
 	mode := []string{"CPU", "MEMORY", "PID"}[h.sort]
@@ -998,6 +982,36 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		{title: "HOST CPU", headline: fmt.Sprintf("%s · %.1f%% summed", cpuHeadline, cpu), visual: cpuTrend, chart: true},
 		{title: "HOST MEMORY", headline: fmt.Sprintf("%s · %s RSS", memoryHeadline, hostBytes(rss, true)), visual: memoryTrend, chart: true},
 	}
+}
+
+// processRich is the selection band for one process: command, CPU and memory
+// gauges against the largest observed process, and identity on the last line.
+func processRich(pal palette, glyphs, hue string, p hostProcess, parent string, memoryCeiling int64) string {
+	cpuText := "—"
+	if p.CPU >= 0 {
+		cpuText = fmt.Sprintf("%.1f%%", p.CPU)
+	}
+	// A zombie is a state to notice, not a level of resource pressure.
+	stateHue := pal.success
+	stateText := "running"
+	if !strings.HasPrefix(p.State, "R") {
+		stateHue, stateText = pal.muted, "sleeping"
+	}
+	if strings.HasPrefix(p.State, "Z") {
+		stateHue, stateText = pal.error, "zombie · parent has not reaped it"
+	}
+	cpuGauge := fmt.Sprintf("[%s]CPU     no reading[-]", pal.muted)
+	if p.CPU >= 0 {
+		cpuGauge = gaugeLine("CPU", p.CPU, 100, 20, hueOf(pal, pressureHue(pal, int(p.CPU))), pal, glyphs, cpuText, "100% = one logical CPU")
+	}
+	memoryGauge := fmt.Sprintf("[%s]MEMORY  no reading[-]", pal.muted)
+	if p.RSS >= 0 && memoryCeiling > 0 {
+		memoryGauge = gaugeLine("MEMORY", float64(p.RSS), float64(memoryCeiling), 20, hueOf(pal, hue), pal, glyphs, hostBytes(p.RSS, true), "RSS · largest observed process sets the scale")
+	}
+	return fmt.Sprintf("[%s::b]%s[-::-]\n%s\n%s\n[%s]PID[-] [%s::b]%d[-::-]  [%s]%s[-]  [%s::b] %s [-::-]  [%s]elapsed %s · parent %d %s[-]",
+		hue, tview.Escape(clean(p.Command)), cpuGauge, memoryGauge,
+		pal.muted, hue, p.PID, pal.muted, tview.Escape(clean(p.User)), stateHue, tview.Escape(clean(stateText)),
+		pal.muted, tview.Escape(clean(p.Elapsed)), p.PPID, tview.Escape(clean(available(parent))))
 }
 
 func (h *hostPage) mountRows() ([]string, [3]hostCard) {
@@ -1040,16 +1054,7 @@ func (h *hostPage) mountRows() ([]string, [3]hostCard) {
 		if h.width >= 100 {
 			usedCell = cellGauge(usedCell, float64(m.Percent), 100, 8, mode)
 		}
-		inodeGauge := fmt.Sprintf("[%s]INODES  %s[-]", p.muted, "unavailable on this filesystem")
-		if m.InodePercent >= 0 {
-			inodeGauge = gaugeLine("INODES", float64(m.InodePercent), 100, 26, hueOf(p, pressureHue(p, m.InodePercent)), p, mode, fmt.Sprintf("%d%%", m.InodePercent),
-				fmt.Sprintf("%s used / %s total · %s free", hostCount(m.InodeUsed), hostCount(m.Inodes), hostCount(m.InodeFree)))
-		}
-		rich := fmt.Sprintf("[%s::b]%s[-::-]  [%s]%s[-]\n%s\n%s\n[%s]Shared pools, bind mounts and reserved blocks affect accounting.[-]",
-			hue, tview.Escape(clean(m.Path)), p.muted, tview.Escape(clean(m.Source)),
-			gaugeLine("SPACE", float64(m.Percent), 100, 26, hueOf(p, spaceHue), p, mode, fmt.Sprintf("%d%%", m.Percent),
-				fmt.Sprintf("%s used · %s free · %s total", hostBytes(m.Used, true), tview.Escape(free), hostBytes(m.Size, true))),
-			inodeGauge, p.muted)
+		rich := func() string { return mountRich(p, mode, hue, m, free, spaceHue) }
 		h.rows = append(h.rows, hostRow{key: m.key(), cells: []string{m.Path, usedCell, free, hostBytes(m.Size, true), hostBytes(m.Used, true), inode, m.Source}, detail: detail, rich: rich, tint: map[int]string{1: spaceHue}, warning: m.Percent >= 85 || m.InodePercent >= 85})
 	}
 	h.table.SetTitle(" FILESYSTEMS · " + []string{"USAGE", "LEAST FREE", "MOUNT"}[h.sort] + " · S sort ")
@@ -1059,6 +1064,21 @@ func (h *hostPage) mountRows() ([]string, [3]hostCard) {
 		{title: "SPACE PRESSURE", headline: fmt.Sprintf("%d at 85%% or more", pressure), visual: signalMeter(float64(peak), 100, 20, mode), note: fmt.Sprintf("Highest observed usage: %d%%", peak)},
 		{title: "INODE PRESSURE", headline: fmt.Sprintf("%d at 85%% or more", inodePressure), visual: "File count / metadata", note: "Unavailable counts shown as —"},
 	}
+}
+
+// mountRich is the selection band for one filesystem: space and inode gauges
+// beneath the mount identity.
+func mountRich(p palette, mode, hue string, m hostMount, free, spaceHue string) string {
+	inodeGauge := fmt.Sprintf("[%s]INODES  %s[-]", p.muted, "unavailable on this filesystem")
+	if m.InodePercent >= 0 {
+		inodeGauge = gaugeLine("INODES", float64(m.InodePercent), 100, 26, hueOf(p, pressureHue(p, m.InodePercent)), p, mode, fmt.Sprintf("%d%%", m.InodePercent),
+			fmt.Sprintf("%s used / %s total · %s free", hostCount(m.InodeUsed), hostCount(m.Inodes), hostCount(m.InodeFree)))
+	}
+	return fmt.Sprintf("[%s::b]%s[-::-]  [%s]%s[-]\n%s\n%s\n[%s]Shared pools, bind mounts and reserved blocks affect accounting.[-]",
+		hue, tview.Escape(clean(m.Path)), p.muted, tview.Escape(clean(m.Source)),
+		gaugeLine("SPACE", float64(m.Percent), 100, 26, hueOf(p, spaceHue), p, mode, fmt.Sprintf("%d%%", m.Percent),
+			fmt.Sprintf("%s used · %s free · %s total", hostBytes(m.Used, true), tview.Escape(free), hostBytes(m.Size, true))),
+		inodeGauge, p.muted)
 }
 
 func (h *hostPage) deletedRows() ([]string, [3]hostCard) {

@@ -21,7 +21,7 @@ const wordmarkHeight = 5
 // renderWordmark lays the letters out side by side. An unknown rune becomes a
 // blank column rather than a missing-glyph box, so the mark never breaks.
 func renderWordmark(text string) []string {
-	rows := make([]string, wordmarkHeight)
+	var builders [wordmarkHeight]strings.Builder
 	for i, r := range text {
 		glyph, known := wordmarkGlyphs[r]
 		if !known {
@@ -29,10 +29,14 @@ func renderWordmark(text string) []string {
 		}
 		for row := 0; row < wordmarkHeight; row++ {
 			if i > 0 {
-				rows[row] += " "
+				builders[row].WriteByte(' ')
 			}
-			rows[row] += glyph[row]
+			builders[row].WriteString(glyph[row])
 		}
+	}
+	rows := make([]string, wordmarkHeight)
+	for row := range builders {
+		rows[row] = builders[row].String()
 	}
 	return rows
 }

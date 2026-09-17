@@ -28,8 +28,18 @@ func (w *workspace) refreshLoop() {
 				w.queue(func() { w.updateLoadingIndicator() })
 			}
 		case <-ticker.C:
-			w.queue(func() {
-				w.updateDashboard()
+			// The tick counts down to the next poll every second, but only pays
+			// for a frame when telemetry has changed since the last one. Inventory
+			// results draw themselves when they arrive.
+			dirty := w.telemetryDirty.Swap(false)
+			enqueue := w.queueQuiet
+			if dirty {
+				enqueue = w.queue
+			}
+			enqueue(func() {
+				if dirty {
+					w.updateDashboard()
+				}
 				front, _ := w.pages.GetFrontPage()
 				ticks++
 				if ticks < w.settings.RefreshSeconds {
