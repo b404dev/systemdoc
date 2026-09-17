@@ -4,6 +4,12 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.2.0 - 2026-09-17
+
+A review release: every change came out of a full code, visual and performance review of v0.1.1. Frames are cheaper, collectors read the kernel directly where they can and explain themselves when they cannot, and a round of visual defects that showed in the documentation screenshots is fixed.
+
 ### Added
 
 - Host signals beside the percentages: the CPU card carries the one-minute load average, the memory card names swap in use, and the masthead adds a `STALL` reading from `/proc/pressure` when tasks have waited on CPU, memory or I/O for more than 5% of the last ten seconds.
