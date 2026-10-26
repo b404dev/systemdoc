@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"systemdoc/internal/dockerinspect"
 )
 
 type workload struct {
@@ -67,15 +69,6 @@ func runBounded(ctx context.Context, timeout time.Duration, limit int, name stri
 		return combined, fmt.Errorf("%s: %w\n%s", name, err, strings.TrimSpace(combined))
 	}
 	return output, nil
-}
-
-func inventory(ctx context.Context, mode int, user bool) ([]workload, error) {
-	items, err := listWorkloads(ctx, mode, user)
-	if err != nil {
-		return nil, err
-	}
-	items, _ = enrichInventory(ctx, mode, user, items)
-	return items, nil
 }
 
 // List identities and states without waiting for resource sampling.
@@ -317,7 +310,7 @@ func inspect(ctx context.Context, mode int, user bool, item workload, tab int) (
 			return output, err
 		}
 		if tab == 0 || tab == 4 {
-			return dockerOverview(output, tab == 4)
+			return dockerinspect.Overview(output, tab == 4)
 		}
 		return output, nil
 	}

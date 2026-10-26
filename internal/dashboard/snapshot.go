@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 type snapshotRequest struct {
@@ -87,7 +89,7 @@ func collectSnapshot(ctx context.Context, request snapshotRequest) string {
 	if !request.Config {
 		out.WriteString("\nConfiguration / inspect JSON omitted. Overview and logs may still contain sensitive data.\n")
 	}
-	return clean(out.String())
+	return textutil.Clean(out.String())
 }
 func (w *workspace) snapshotDialog() {
 	item := w.current()
@@ -98,7 +100,7 @@ func (w *workspace) snapshotDialog() {
 	host, _ := os.Hostname()
 	request := snapshotRequest{Item: item, Mode: w.mode, User: w.user, Host: host, Endpoint: dockerEndpoint(), At: time.Now(), Activity: append([]activityEvent(nil), w.activity...)}
 	form := tview.NewForm().AddCheckbox("Include recent logs (latest 150)", true, nil).AddCheckbox("Include configuration / inspect JSON", false, nil)
-	form.SetBorder(true).SetTitle(" Troubleshooting snapshot · " + tview.Escape(clean(item.Name)) + " ")
+	form.SetBorder(true).SetTitle(" Troubleshooting snapshot · " + tview.Escape(textutil.Clean(item.Name)) + " ")
 	close := func() { w.pages.RemovePage("snapshot-options"); w.app.SetFocus(w.table) }
 	form.AddButton("Collect and review", func() {
 		request.Logs = form.GetFormItem(0).(*tview.Checkbox).IsChecked()

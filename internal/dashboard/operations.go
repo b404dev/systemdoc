@@ -12,6 +12,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 // tailBuffer bounds command output even during long builds or noisy failures.
@@ -219,7 +221,7 @@ func (w *workspace) execute(target, name string, args []string) {
 			case err = <-done:
 				running = false
 			case <-ticker.C:
-				snapshot := clean(output.String())
+				snapshot := textutil.Clean(output.String())
 				w.queue(func() {
 					op.Output = snapshot
 					front, _ := w.pages.GetFrontPage()
@@ -234,7 +236,7 @@ func (w *workspace) execute(target, name string, args []string) {
 			cancelled := ctx.Err() != nil
 			w.operationCancel = nil
 			cancel()
-			op.Output = clean(output.String())
+			op.Output = textutil.Clean(output.String())
 			op.Status = "command completed · verify workload health"
 			if err != nil {
 				op.Status = "failed"

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 func (w *workspace) toggleLogDrawer() {
@@ -54,7 +56,7 @@ func (w *workspace) syncLogDrawer() {
 	w.drawerCancel = cancel
 	generation, mode, user, filter := w.drawerGeneration, w.mode, w.user, w.logFilter
 	w.drawerPaused = false
-	w.logDrawer.SetTitle(" LOGS · " + tview.Escape(clean(item.Name)) + " · L closes ")
+	w.logDrawer.SetTitle(" LOGS · " + tview.Escape(textutil.Clean(item.Name)) + " · L closes ")
 	w.logDrawer.SetText(" Connecting to log stream…")
 	go func() {
 		select {

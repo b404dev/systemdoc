@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 func (w *workspace) streamLogs(ctx context.Context, mode int, user bool, item workload, filter logFilter, generation int) {
@@ -60,11 +62,6 @@ func (f logFilter) label() string {
 		parts = append(parts, "this boot")
 	}
 	return strings.Join(parts, " · ")
-}
-
-// followLogs batches bounded CLI output; callers choose how to display it.
-func followLogs(ctx context.Context, mode int, user bool, item workload, update func(string, string)) {
-	followLogsWith(ctx, mode, user, item, logFilter{}, update)
 }
 
 func followLogsWith(ctx context.Context, mode int, user bool, item workload, filter logFilter, update func(string, string)) {
@@ -196,7 +193,7 @@ func (w *workspace) renderDrawerLogs() {
 	if w.drawerLog.ending != "" {
 		state = "ENDED · L close/reopen"
 	}
-	w.logDrawer.SetTitle(" " + state + " · " + tview.Escape(clean(w.current().Name)) + " · L closes ")
+	w.logDrawer.SetTitle(" " + state + " · " + tview.Escape(textutil.Clean(w.current().Name)) + " · L closes ")
 }
 
 // Bound live layout work while keeping the complete retained buffer available

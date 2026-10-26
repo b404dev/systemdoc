@@ -140,10 +140,10 @@ func (d *luminousDashboard) Draw(screen tcell.Screen) {
 	p := d.w.palette()
 	rails := map[*tview.Box]string{d.w.selectionCard.Box: p.accent}
 	for i, card := range d.w.cards {
-		// Active and attention are states, so they wear state colours. The two
+		// Active and attention are states, so they wear state colours. The
 		// host cards are identities and take decorative hues; their figures
 		// carry severity in the headline instead.
-		rails[card.Box] = []string{p.success, p.error, p.accent, p.glow}[i]
+		rails[card.Box] = []string{p.success, p.error, p.accent, p.glow, p.accent}[i]
 	}
 	paintSurfaces(screen, d.Flex, p, d.w.header, d.w.table, rails, d.w.limitedColours)
 }

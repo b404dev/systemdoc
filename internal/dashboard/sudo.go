@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 // Elevated probes need sudo, and the reader should not leave the workspace to
@@ -32,7 +34,7 @@ func sudoValidate(ctx context.Context, password []byte) error {
 	cmd.Stdout, cmd.Stderr = &output, &output
 	err := cmd.Run()
 	if err != nil {
-		text := strings.TrimSpace(clean(output.String()))
+		text := strings.TrimSpace(textutil.Clean(output.String()))
 		if text == "" {
 			text = err.Error()
 		}
@@ -72,12 +74,12 @@ func (w *workspace) sudoPasswordDialog(problem string, then func()) {
 	note := textView().SetDynamicColors(true).SetWrap(true)
 	text := "[" + p.muted + "]sudo has no cached authorization. The password goes to sudo -S -v on standard input, refreshes its timestamp and is discarded; nothing is stored. Enter continues · Escape cancels.[-]"
 	if problem != "" {
-		text = "[" + p.error + "::b]" + tview.Escape(clean(problem)) + "[-::-]\n" + text
+		text = "[" + p.error + "::b]" + tview.Escape(textutil.Clean(problem)) + "[-::-]\n" + text
 	}
 	note.SetText(text)
 	panel := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(note, 0, 1, false).AddItem(field, 1, 0, true)
 	panel.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetBorderColor(tcell.GetColor(p.warning)).SetBorderAttributes(tcell.AttrBold)
-	panel.SetTitle(" " + w.iconLabel(iconLock, "AUTHORIZE · sudo for "+tview.Escape(clean(name))+" ")).SetTitleColor(tcell.GetColor(p.warning))
+	panel.SetTitle(" " + w.iconLabel(iconLock, "AUTHORIZE · sudo for "+tview.Escape(textutil.Clean(name))+" ")).SetTitleColor(tcell.GetColor(p.warning))
 	close := func() { w.pages.RemovePage("sudo"); w.app.SetFocus(focus) }
 	field.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEscape {

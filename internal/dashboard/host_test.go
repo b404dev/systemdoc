@@ -15,6 +15,9 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/textutil"
 )
 
 const processFixture = `    1 0 root 0.1 900 Ss 02:30:00 /sbin/init
@@ -196,11 +199,11 @@ func TestVerifiedProcessSignalTerminatesExactPID(t *testing.T) {
 		}
 	}()
 
-	raw, diagnostic, err := networkCommand(context.Background(), "ps", "-ww", "-p", strconv.Itoa(cmd.Process.Pid), "-o", "args=")
+	raw, diagnostic, err := commandcapture.Capture(context.Background(), "ps", "-ww", "-p", strconv.Itoa(cmd.Process.Pid), "-o", "args=")
 	if err != nil {
 		t.Fatalf("read child identity: %v %s", err, diagnostic)
 	}
-	process := hostProcess{PID: cmd.Process.Pid, Command: strings.TrimSpace(clean(raw))}
+	process := hostProcess{PID: cmd.Process.Pid, Command: strings.TrimSpace(textutil.Clean(raw))}
 	changed := process
 	changed.Command += " --different-identity"
 	if err := verifyAndSignalProcess(context.Background(), changed, syscall.SIGTERM); err == nil || !strings.Contains(err.Error(), "changed identity") {

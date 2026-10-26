@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 // constellationGroupCap bounds each unit-kind group so a huge target such as
@@ -110,7 +112,7 @@ func constellationText(item workload, mode int, raw string, nerd bool, states ma
 // collected text, keeping the collector's order.
 func relationshipLines(item workload, raw string) []string {
 	var lines []string
-	for _, line := range strings.Split(clean(raw), "\n") {
+	for _, line := range strings.Split(textutil.Clean(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || line == item.ID || line == item.Name || strings.HasPrefix(line, "SYSTEM CONSTELLATION") {
 			continue
@@ -218,7 +220,7 @@ func (w *workspace) constellation() {
 	view := textView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	view.SetBorder(true).SetTitle(" " + w.iconLabel(iconConstellation, "SYSTEM CONSTELLATION · x · Esc returns "))
 	p := w.palette()
-	view.SetText(fmt.Sprintf("[%s::b]%s %s[-::-]\n\n[%s]Mapping relationships on demand…[-]", p.accent, w.icon(iconConstellation), tview.Escape(clean(item.Name)), p.muted))
+	view.SetText(fmt.Sprintf("[%s::b]%s %s[-::-]\n\n[%s]Mapping relationships on demand…[-]", p.accent, w.icon(iconConstellation), tview.Escape(textutil.Clean(item.Name)), p.muted))
 	close := func() {
 		cancel()
 		w.pages.RemovePage("constellation")

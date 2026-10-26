@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 type logSearchOptions struct {
@@ -66,7 +68,7 @@ func searchRetainedLogs(raw string, o logSearchOptions) (string, []int, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	lines := strings.Split(strings.TrimSuffix(clean(raw), "\n"), "\n")
+	lines := strings.Split(strings.TrimSuffix(textutil.Clean(raw), "\n"), "\n")
 	if raw == "" {
 		return "", nil, nil
 	}

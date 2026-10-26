@@ -11,6 +11,10 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/hostnet"
+	"systemdoc/internal/textutil"
 )
 
 type networkPage struct {
@@ -28,11 +32,11 @@ type networkPage struct {
 	cards                  [3]*tview.TextView
 	buttons                [4]*tview.Button
 	modeButtons            [5]*tview.Button
-	snapshot               networkSnapshot
-	visible                []networkSocket
-	interfaces             []networkInterface
-	rates                  []networkRate
-	visibleRates           []networkRate
+	snapshot               hostnet.Snapshot
+	visible                []hostnet.Socket
+	interfaces             []hostnet.Interface
+	rates                  []hostnet.Rate
+	visibleRates           []hostnet.Rate
 	view                   int
 	filters                [4]string
 	selected               string
@@ -284,7 +288,7 @@ func (n *networkPage) refresh() {
 	n.updateStatus()
 	platform, view := servicePlatform, n.view
 	go func() {
-		snapshot, err := collectNetworkView(n.ctx, platform, view)
+		snapshot, err := hostnet.CollectView(n.ctx, platform, view)
 		if n.ctx.Err() != nil {
 			return
 		}
@@ -304,7 +308,7 @@ func (n *networkPage) refresh() {
 				switch view {
 				case 3:
 					n.rateInterval = snapshot.CounterAt.Sub(n.snapshot.CounterAt)
-					n.rates = networkRates(n.snapshot.Counters, n.snapshot.CounterAt, snapshot.Counters, snapshot.CounterAt)
+					n.rates = hostnet.Rates(n.snapshot.Counters, n.snapshot.CounterAt, snapshot.Counters, snapshot.CounterAt)
 					n.recordRateHistory()
 					n.snapshot.Counters = snapshot.Counters
 					n.snapshot.CounterAt = snapshot.CounterAt
@@ -441,7 +445,7 @@ func (n *networkPage) render() {
 			if col == 0 {
 				value = " " + value // Leave room for the shared selection marker.
 			}
-			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(p.text)).SetBackgroundColor(tcell.GetColor(p.background)).SetMaxWidth(12)
+			cell := tview.NewTableCell(tview.Escape(textutil.Clean(value))).SetTextColor(tcell.GetColor(p.text)).SetBackgroundColor(tcell.GetColor(p.background)).SetMaxWidth(12)
 			if networkNumeric[headers[col]] {
 				cell.SetAlign(tview.AlignRight)
 			}
@@ -492,7 +496,7 @@ func (n *networkPage) render() {
 		}
 	} else {
 		for _, s := range n.snapshot.Sockets {
-			if n.view == 0 && !s.bound() || !matchesNetworkSocket(s, n.filters[n.view]) {
+			if n.view == 0 && !s.Bound() || !hostnet.MatchesSocket(s, n.filters[n.view]) {
 				continue
 			}
 			n.visible = append(n.visible, s)
@@ -511,7 +515,7 @@ func (n *networkPage) render() {
 			if width < 60 {
 				values = values[1:]
 			}
-			add(values, s.key())
+			add(values, s.Key())
 			row := n.table.GetRowCount() - 1
 			if row > 0 {
 				protoCol := 0
@@ -529,7 +533,7 @@ func (n *networkPage) render() {
 					}
 					if cell := n.table.GetCell(row, stateCol); cell != nil {
 						colour := p.muted
-						if s.bound() {
+						if s.Bound() {
 							colour = p.success
 						} else if strings.Contains(s.State, "CLOSE") {
 							colour = p.warning
@@ -580,20 +584,20 @@ func (n *networkPage) updateDetail(row int) {
 		if row < 1 || row > len(n.visible) {
 			n.selected = ""
 			if n.failure[n.view] != "" {
-				n.detail.SetText("Socket lookup failed:\n" + clean(n.failure[n.view]) + "\n\nInterfaces are available separately. Press r to retry.")
+				n.detail.SetText("Socket lookup failed:\n" + textutil.Clean(n.failure[n.view]) + "\n\nInterfaces are available separately. Press r to retry.")
 				return
 			}
 			n.detail.SetText("No matching sockets. Try Connections or clear the filter.\nFilters: port:3000  localport:8080  process:node  pid:123  proto:tcp  state:listen\nHost permissions can hide owners or sockets. Docker VM/container namespaces are separate.")
 			return
 		}
 		s := n.visible[row-1]
-		n.selected = s.key()
+		n.selected = s.Key()
 		pid := "unavailable"
 		if s.PID > 0 {
 			pid = strconv.Itoa(s.PID)
 		}
 		p := n.w.palette()
-		n.detail.SetText(fmt.Sprintf("[%s::b]%s  %s[-::-]  %s\n%s\n%s\n%s\n%s\n%s\n[%s]%s · a bind address is not a firewall rule[-]", p.accent, tview.Escape(s.Protocol), tview.Escape(s.State), tview.Escape(available(s.Process)), exposureChip(p, s.Local, s.State), networkField("Local", s.Local, p.muted)+"    "+networkField("Remote", available(s.Remote), p.muted), networkField("Process", available(s.Process), p.accent)+"    "+networkField("PID", pid, p.muted)+"    "+networkField("User", available(s.User), p.muted)+"    "+networkField("UID", available(s.UID), p.muted), networkField("FD", available(s.FD), p.muted)+"    "+networkField("Inode", available(s.Inode), p.muted)+"    "+networkField("Family", available(s.Family), p.muted), networkField("Cgroup", available(s.Cgroup), p.muted), p.muted, tview.Escape(socketBinding(s.Local))))
+		n.detail.SetText(fmt.Sprintf("[%s::b]%s  %s[-::-]  %s\n%s\n%s\n%s\n%s\n%s\n[%s]%s · a bind address is not a firewall rule[-]", p.accent, tview.Escape(s.Protocol), tview.Escape(s.State), tview.Escape(available(s.Process)), exposureChip(p, s.Local, s.State), networkField("Local", s.Local, p.muted)+"    "+networkField("Remote", available(s.Remote), p.muted), networkField("Process", available(s.Process), p.accent)+"    "+networkField("PID", pid, p.muted)+"    "+networkField("User", available(s.User), p.muted)+"    "+networkField("UID", available(s.UID), p.muted), networkField("FD", available(s.FD), p.muted)+"    "+networkField("Inode", available(s.Inode), p.muted)+"    "+networkField("Family", available(s.Family), p.muted), networkField("Cgroup", available(s.Cgroup), p.muted), p.muted, tview.Escape(hostnet.Binding(s.Local))))
 	}
 	if n.selected == oldKey {
 		n.detail.ScrollTo(scroll, col)
@@ -609,13 +613,13 @@ func (n *networkPage) updateSummary() {
 	// or CLOSE-WAIT pile-up is visible here before anyone scrolls the table.
 	states := map[string]int{}
 	for _, s := range n.snapshot.Sockets {
-		if s.bound() {
+		if s.Bound() {
 			listeners++
 		} else {
 			connections++
 			states[s.State]++
 		}
-		if s.Protocol == "UDP" && s.bound() {
+		if s.Protocol == "UDP" && s.Bound() {
 			udp++
 		}
 		if s.PID > 0 {
@@ -632,7 +636,7 @@ func (n *networkPage) updateSummary() {
 	}
 	if n.view == 3 {
 		download, upload := 0.0, 0.0
-		ready, busiest := 0, networkRate{}
+		ready, busiest := 0, hostnet.Rate{}
 		for _, rate := range n.rates {
 			if !rate.Ready {
 				continue
@@ -699,7 +703,7 @@ func socketStateSummary(states map[string]int) string {
 var networkNumeric = map[string]bool{"PID": true, "MTU": true, "DOWNLOAD": true, "UPLOAD": true, "TOTAL RX": true, "TOTAL TX": true}
 
 func networkField(label, value, colour string) string {
-	return fmt.Sprintf("[%s]%s[-] %s", colour, label, tview.Escape(clean(value)))
+	return fmt.Sprintf("[%s]%s[-] %s", colour, label, tview.Escape(textutil.Clean(value)))
 }
 
 func networkBytes(value float64) string {
@@ -747,10 +751,10 @@ func (n *networkPage) updateStatus() {
 		note = "Rates use byte-counter deltas between polls; loopback and virtual interfaces are included and may overlap."
 	}
 	if n.snapshot.Note != "" {
-		note += " · " + clean(n.snapshot.Note)
+		note += " · " + textutil.Clean(n.snapshot.Note)
 	}
 	if n.failure[n.view] != "" {
-		note = "Refresh failed; previous sample retained: " + clean(n.failure[n.view])
+		note = "Refresh failed; previous sample retained: " + textutil.Clean(n.failure[n.view])
 	}
 	stateColour := n.w.palette().muted
 	if n.busy {
@@ -763,9 +767,9 @@ func (n *networkPage) updateStatus() {
 	if n.view == 3 {
 		source = n.snapshot.CounterSource
 	}
-	lead := fmt.Sprintf(" %d rows · %s · poll %ds · %s · ", count, state, n.w.settings.RefreshSeconds, clean(source))
-	note = ellipsize(clean(strings.ReplaceAll(note, "\n", " · ")), max(0, n.lastWidth-displayWidth(lead)-1))
-	n.status.SetText(fmt.Sprintf(" [%s::b]%d rows[-::-] · [%s]%s[-] · poll %ds · %s · [%s]%s[-]", n.w.palette().accent, count, stateColour, state, n.w.settings.RefreshSeconds, tview.Escape(clean(source)), n.w.palette().muted, tview.Escape(note)))
+	lead := fmt.Sprintf(" %d rows · %s · poll %ds · %s · ", count, state, n.w.settings.RefreshSeconds, textutil.Clean(source))
+	note = ellipsize(textutil.Clean(strings.ReplaceAll(note, "\n", " · ")), max(0, n.lastWidth-displayWidth(lead)-1))
+	n.status.SetText(fmt.Sprintf(" [%s::b]%d rows[-::-] · [%s]%s[-] · poll %ds · %s · [%s]%s[-]", n.w.palette().accent, count, stateColour, state, n.w.settings.RefreshSeconds, tview.Escape(textutil.Clean(source)), n.w.palette().muted, tview.Escape(note)))
 }
 func (n *networkPage) report() string {
 	host, _ := os.Hostname()
@@ -807,9 +811,9 @@ func (n *networkPage) report() string {
 	}
 	out.WriteString("\nHost network view; container/VM/remote Docker endpoints are not queried. Owners and sockets may be hidden by permissions. Multiple owners can share a socket. PID reuse and separately sampled process details are possible. Speed is host-interface throughput between polls, not negotiated link capacity; virtual interfaces may overlap.\n")
 	out.WriteString(n.snapshot.Note)
-	return clean(out.String())
+	return textutil.Clean(out.String())
 }
-func (n *networkPage) processDetails(s networkSocket) {
+func (n *networkPage) processDetails(s hostnet.Socket) {
 	if s.PID <= 0 {
 		n.w.message("Process owner unavailable", "The socket is visible, but no PID was reported. Native permissions may hide ownership; closed sockets can also have no owner.\n\nCgroup: "+available(s.Cgroup))
 		return
@@ -828,7 +832,7 @@ func (n *networkPage) processDetails(s networkSocket) {
 	})
 	n.w.pages.AddPage("network-process", centered(view, 120, 24), true, true)
 	go func() {
-		raw, diagnostic, err := networkCommand(ctx, "ps", "-ww", "-p", strconv.Itoa(s.PID), "-o", "pid=,ppid=,user=,etime=,command=")
+		raw, diagnostic, err := commandcapture.Capture(ctx, "ps", "-ww", "-p", strconv.Itoa(s.PID), "-o", "pid=,ppid=,user=,etime=,command=")
 		if ctx.Err() != nil {
 			return
 		}
@@ -838,7 +842,7 @@ func (n *networkPage) processDetails(s networkSocket) {
 		}
 		n.w.queue(func() {
 			if ctx.Err() == nil {
-				view.SetText(clean(content))
+				view.SetText(textutil.Clean(content))
 			}
 		})
 	}()

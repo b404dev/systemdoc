@@ -83,12 +83,6 @@ var kube struct {
 	failures  int
 }
 
-func resetKubeState() {
-	kube.mu.Lock()
-	defer kube.mu.Unlock()
-	kube.stack, kube.err, kube.dockerErr, kube.probed, kube.failures = nil, "", "", time.Time{}, 0
-}
-
 // kubeLabel is the short stack description shown in the masthead and table.
 func kubeLabel() string {
 	kube.mu.Lock()

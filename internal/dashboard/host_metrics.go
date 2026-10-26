@@ -6,12 +6,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/hostgpu"
 )
 
 // hostUtilisation is whole-machine utilisation. It is deliberately separate
 // from fleetSample, which only ever sums the workloads Systemdoc observed, so
 // a missing host reading can never be mistaken for a workload measurement.
 type hostUtilisation struct {
+	gpus       []hostgpu.Device
 	cpuPercent float64
 	cpuOK      bool
 	memPercent float64
@@ -408,11 +412,11 @@ func pressureSignal(p palette, pressure hostPressure) string {
 // CPU is summed from live process shares and memory from page accounting.
 func collectDarwinUtilisation(ctx context.Context, cores int) hostUtilisation {
 	var result hostUtilisation
-	if raw, _, err := networkCommand(ctx, "ps", "-A", "-o", "%cpu="); err == nil {
+	if raw, _, err := commandcapture.Capture(ctx, "ps", "-A", "-o", "%cpu="); err == nil {
 		result.cpuPercent, result.cpuOK = parseProcessCPU(raw, cores)
 	}
 	total := int64(0)
-	if raw, _, err := networkCommand(ctx, "sysctl", "-n", "hw.memsize"); err == nil {
+	if raw, _, err := commandcapture.Capture(ctx, "sysctl", "-n", "hw.memsize"); err == nil {
 		if value, convErr := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); convErr == nil {
 			total = value
 		}
@@ -420,7 +424,7 @@ func collectDarwinUtilisation(ctx context.Context, cores int) hostUtilisation {
 	if total <= 0 {
 		return result
 	}
-	if raw, _, err := networkCommand(ctx, "vm_stat"); err == nil {
+	if raw, _, err := commandcapture.Capture(ctx, "vm_stat"); err == nil {
 		if used, ok := parseVMStat(raw); ok {
 			used = max(0, min(total, used))
 			result.memUsed, result.memTotal, result.memOK = used, total, true
@@ -459,6 +463,7 @@ func (w *workspace) hostMetricsLoop(cores int) {
 	defer ticker.Stop()
 	for {
 		usage, sample := collectHostUtilisation(w.ctx, servicePlatform, cores, previous)
+		usage.gpus = hostgpu.Collect(w.ctx)
 		previous = sample
 		usage.cpus = inventory
 		if servicePlatform == "darwin" {
@@ -487,6 +492,18 @@ func (w *workspace) recordHostUtilisation(usage hostUtilisation) {
 	}
 	w.hostCPUHistory = appendBounded(w.hostCPUHistory, cpu)
 	w.hostMemoryHistory = appendBounded(w.hostMemoryHistory, memory)
+	if len(usage.gpus) == 0 {
+		for key, history := range w.hostGPUHistory {
+			w.hostGPUHistory[key] = appendBounded(history, -1)
+		}
+	} else {
+		next := make(map[string][]float64, len(usage.gpus))
+		for i, gpu := range usage.gpus {
+			key := gpuHistoryKey(gpu, i)
+			next[key] = appendBounded(w.hostGPUHistory[key], gpu.Busy)
+		}
+		w.hostGPUHistory = next
+	}
 	// One trail per logical CPU, kept in step with the aggregate: a sample
 	// without per-CPU figures stores a gap in every trail.
 	if count := max(len(usage.coreBusy), len(w.hostCoreHistory)); count > 0 {

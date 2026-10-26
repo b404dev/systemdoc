@@ -7,6 +7,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/hostnet"
 )
 
 func TestNetworkSharesDashboardChromeAndSurfaces(t *testing.T) {
@@ -34,7 +36,7 @@ func TestNetworkSharesDashboardChromeAndSurfaces(t *testing.T) {
 			_, page := w.pages.GetFrontPage()
 			n := page.(*networkPage)
 			n.ctx, n.cancel = context.WithCancel(context.Background())
-			n.snapshot = networkSnapshot{Sockets: mustSS(t)}
+			n.snapshot = hostnet.Snapshot{Sockets: mustSS(t)}
 			n.render()
 			w.app.ForceDraw()
 			_, _, _, networkHeaderHeight := n.header.GetRect()

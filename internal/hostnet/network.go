@@ -1,7 +1,7 @@
-package dashboard
+// Package hostnet collects and filters host sockets and interface telemetry.
+package hostnet
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,21 +14,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/textutil"
 )
 
-type networkSocket struct {
+type Socket struct {
 	Protocol, Family, State, Local, Remote string
 	Process, User, UID, FD, Inode, Cgroup  string
 	PID                                    int
 }
 
-func (s networkSocket) key() string {
+func (s Socket) Key() string {
 	return fmt.Sprintf("%s/%s/%s/%s/%d/%s/%s", s.Protocol, s.Family, s.Local, s.Remote, s.PID, s.FD, s.Inode)
 }
-func (s networkSocket) bound() bool {
+func (s Socket) Bound() bool {
 	return s.State == "LISTEN" || s.Protocol == "UDP" && s.State == "UNCONN"
 }
-func socketEndpoint(value string) (string, string) {
+func Endpoint(value string) (string, string) {
 	host, port, err := net.SplitHostPort(value)
 	if err == nil {
 		return host, port
@@ -38,8 +41,8 @@ func socketEndpoint(value string) (string, string) {
 	}
 	return value, ""
 }
-func socketBinding(address string) string {
-	host, _ := socketEndpoint(address)
+func Binding(address string) string {
+	host, _ := Endpoint(address)
 	switch host {
 	case "0.0.0.0":
 		return "All IPv4 interfaces"
@@ -69,16 +72,9 @@ func socketState(value string) string {
 
 var ssOwner = regexp.MustCompile(`\("((?:[^"\\]|\\.)*)",pid=([0-9]+),fd=([0-9]+)\)`)
 
-// parseSS keeps the historical signature: it fails only when the output had
-// rows and none of them was a socket.
-func parseSS(raw string) ([]networkSocket, error) {
-	rows, _, err := parseSSTolerant(raw)
-	return rows, err
-}
-
-// parseSSTolerant skips rows (or owner entries) it cannot read and counts
+// ParseSS skips rows (or owner entries) it cannot read and counts
 // them, so one odd row no longer blanks the whole socket table.
-func parseSSTolerant(raw string) (rows []networkSocket, skipped int, err error) {
+func ParseSS(raw string) (rows []Socket, skipped int, err error) {
 	for _, line := range strings.Split(raw, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -88,8 +84,8 @@ func parseSSTolerant(raw string) (rows []networkSocket, skipped int, err error) 
 			skipped++
 			continue
 		}
-		s := networkSocket{Protocol: strings.ToUpper(f[0]), State: socketState(f[1]), Local: f[4], Remote: f[5]}
-		host, _ := socketEndpoint(s.Local)
+		s := Socket{Protocol: strings.ToUpper(f[0]), State: socketState(f[1]), Local: f[4], Remote: f[5]}
+		host, _ := Endpoint(s.Local)
 		if strings.Contains(host, ":") {
 			s.Family = "IPv6"
 		} else if host != "*" {
@@ -140,15 +136,15 @@ func parseSSTolerant(raw string) (rows []networkSocket, skipped int, err error) 
 
 // NUL field records keep process names separate from file records and endpoints.
 // Newline is only stripped at record boundaries, never used as a field delimiter.
-func parseLsofSockets(raw string) ([]networkSocket, error) {
+func parseLsofSockets(raw string) ([]Socket, error) {
 	if raw == "" {
 		return nil, nil
 	}
 	if !strings.HasSuffix(raw, "\x00\n") && !strings.HasSuffix(raw, "\x00") {
 		return nil, fmt.Errorf("incomplete lsof field output")
 	}
-	var rows []networkSocket
-	var process, current networkSocket
+	var rows []Socket
+	var process, current Socket
 	hasFile := false
 	seenProcess := false
 	flush := func() error {
@@ -190,7 +186,7 @@ func parseLsofSockets(raw string) ([]networkSocket, error) {
 			if err != nil || pid <= 0 {
 				return nil, fmt.Errorf("invalid lsof PID")
 			}
-			process = networkSocket{PID: pid}
+			process = Socket{PID: pid}
 		case 'c':
 			process.Process = value
 		case 'u':
@@ -225,82 +221,44 @@ func parseLsofSockets(raw string) ([]networkSocket, error) {
 	return rows, nil
 }
 
-type networkInterface struct {
+type Interface struct {
 	Name, Flags, Addresses, Hardware string
 	MTU                              int
 }
-type networkCounter struct {
+type Counter struct {
 	Name     string
 	Receive  uint64
 	Transmit uint64
 }
-type networkRate struct {
+type Rate struct {
 	Name                    string
 	Receive, Transmit       float64
 	ReceiveTotal, SendTotal uint64
 	Ready                   bool
 }
-type networkSnapshot struct {
+type Snapshot struct {
 	InterfaceAt, CounterAt      time.Time
-	Sockets                     []networkSocket
-	Interfaces                  []networkInterface
-	Counters                    []networkCounter
+	Sockets                     []Socket
+	Interfaces                  []Interface
+	Counters                    []Counter
 	Source, CounterSource, Note string
 	At                          time.Time
 }
 
-// Preserve the beginning of structured output, and fail visibly on overflow.
-// A tail buffer could drop a process header and misattribute subsequent sockets.
-type networkBuffer struct {
-	bytes.Buffer
-	overflow bool
-}
-
-func (b *networkBuffer) Write(p []byte) (int, error) {
-	n := len(p)
-	space := 4*1024*1024 - b.Len()
-	if n > space {
-		b.overflow = true
-		p = p[:space]
-	}
-	_, _ = b.Buffer.Write(p)
-	return n, nil
-}
-func networkCommand(ctx context.Context, name string, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	var output, diagnostic networkBuffer
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
-	cmd.Stdout = &output
-	cmd.Stderr = &diagnostic
-	// lsof forks a helper child; if it keeps the pipe open after the parent is
-	// killed on timeout, Wait must still return or the page's busy flag never
-	// clears and it stops refreshing for the rest of the session.
-	cmd.WaitDelay = 2 * time.Second
-	err := cmd.Run()
-	if output.overflow || diagnostic.overflow {
-		return "", "", fmt.Errorf("%s output exceeded 4 MiB; snapshot was not used", name)
-	}
-	if ctx.Err() != nil {
-		return "", "", fmt.Errorf("%s: %w", name, ctx.Err())
-	}
-	return output.String(), clean(diagnostic.String()), err
-}
-func collectNetworkSockets(ctx context.Context, platform string) (networkSnapshot, error) {
-	result := networkSnapshot{At: time.Now()}
+func CollectSockets(ctx context.Context, platform string) (Snapshot, error) {
+	result := Snapshot{At: time.Now()}
 	var raw, diagnostic string
 	var err error
 	if platform != "darwin" {
 		result.Source = "ss · host network namespace"
-		raw, diagnostic, err = networkCommand(ctx, "ss", "-H", "-n", "-a", "-t", "-u", "-p", "-e")
+		raw, diagnostic, err = commandcapture.Capture(ctx, "ss", "-H", "-n", "-a", "-t", "-u", "-p", "-e")
 		if err == nil {
 			var skipped int
-			result.Sockets, skipped, err = parseSSTolerant(raw)
+			result.Sockets, skipped, err = ParseSS(raw)
 			if err != nil {
 				return result, err
 			}
-			result.Note = joinNote(diagnostic, skippedNote(skipped, "ss rows"))
+			result.Note = textutil.JoinNote(diagnostic, textutil.SkippedNote(skipped, "ss rows"))
 			enrichNetworkOwners(result.Sockets)
 			return result, nil
 		}
@@ -309,7 +267,7 @@ func collectNetworkSockets(ctx context.Context, platform string) (networkSnapsho
 		}
 	}
 	result.Source = "lsof · visible process sockets"
-	raw, diagnostic, err = networkCommand(ctx, "lsof", "-nP", "-iTCP", "-iUDP", "-F0pcuLftPnT")
+	raw, diagnostic, err = commandcapture.Capture(ctx, "lsof", "-nP", "-iTCP", "-iUDP", "-F0pcuLftPnT")
 	if err != nil {
 		var status *exec.ExitError
 		if !(errors.As(err, &status) && status.ExitCode() == 1 && (raw != "" || diagnostic == "")) {
@@ -329,7 +287,7 @@ func collectNetworkSockets(ctx context.Context, platform string) (networkSnapsho
 	}
 	return result, nil
 }
-func enrichNetworkOwners(rows []networkSocket) {
+func enrichNetworkOwners(rows []Socket) {
 	users := map[string]string{}
 	for i := range rows {
 		if rows[i].User != "" || rows[i].UID == "" {
@@ -346,12 +304,12 @@ func enrichNetworkOwners(rows []networkSocket) {
 		rows[i].User = name
 	}
 }
-func collectNetworkInterfaces() ([]networkInterface, error) {
+func collectNetworkInterfaces() ([]Interface, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
 	}
-	var rows []networkInterface
+	var rows []Interface
 	for _, iface := range interfaces {
 		addresses, err := iface.Addrs()
 		if err != nil {
@@ -361,14 +319,14 @@ func collectNetworkInterfaces() ([]networkInterface, error) {
 		for _, address := range addresses {
 			values = append(values, address.String())
 		}
-		rows = append(rows, networkInterface{Name: iface.Name, Flags: iface.Flags.String(), Addresses: strings.Join(values, ", "), Hardware: iface.HardwareAddr.String(), MTU: iface.MTU})
+		rows = append(rows, Interface{Name: iface.Name, Flags: iface.Flags.String(), Addresses: strings.Join(values, ", "), Hardware: iface.HardwareAddr.String(), MTU: iface.MTU})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows, nil
 }
 
-func parseProcNetDev(raw string) ([]networkCounter, error) {
-	var rows []networkCounter
+func parseProcNetDev(raw string) ([]Counter, error) {
+	var rows []Counter
 	for _, line := range strings.Split(raw, "\n") {
 		name, values, ok := strings.Cut(line, ":")
 		if !ok {
@@ -386,7 +344,7 @@ func parseProcNetDev(raw string) ([]networkCounter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid transmit counter")
 		}
-		rows = append(rows, networkCounter{Name: strings.TrimSpace(name), Receive: receive, Transmit: transmit})
+		rows = append(rows, Counter{Name: strings.TrimSpace(name), Receive: receive, Transmit: transmit})
 	}
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("no interface counters in /proc/net/dev")
@@ -395,9 +353,9 @@ func parseProcNetDev(raw string) ([]networkCounter, error) {
 	return rows, nil
 }
 
-func parseDarwinNetstat(raw string) ([]networkCounter, error) {
+func parseDarwinNetstat(raw string) ([]Counter, error) {
 	indices := map[string]int{}
-	rows := map[string]networkCounter{}
+	rows := map[string]Counter{}
 	for _, line := range strings.Split(raw, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
@@ -422,10 +380,10 @@ func parseDarwinNetstat(raw string) ([]networkCounter, error) {
 		}
 		current := rows[fields[0]]
 		if receive >= current.Receive && transmit >= current.Transmit {
-			rows[fields[0]] = networkCounter{Name: fields[0], Receive: receive, Transmit: transmit}
+			rows[fields[0]] = Counter{Name: fields[0], Receive: receive, Transmit: transmit}
 		}
 	}
-	result := make([]networkCounter, 0, len(rows))
+	result := make([]Counter, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, row)
 	}
@@ -436,9 +394,9 @@ func parseDarwinNetstat(raw string) ([]networkCounter, error) {
 	return result, nil
 }
 
-func collectNetworkCounters(ctx context.Context, platform string) ([]networkCounter, error) {
+func collectNetworkCounters(ctx context.Context, platform string) ([]Counter, error) {
 	if platform == "darwin" {
-		raw, diagnostic, err := networkCommand(ctx, "netstat", "-ibn")
+		raw, diagnostic, err := commandcapture.Capture(ctx, "netstat", "-ibn")
 		if err != nil {
 			return nil, fmt.Errorf("netstat: %w\n%s", err, diagnostic)
 		}
@@ -451,15 +409,15 @@ func collectNetworkCounters(ctx context.Context, platform string) ([]networkCoun
 	return parseProcNetDev(string(raw))
 }
 
-func networkRates(previous []networkCounter, previousAt time.Time, current []networkCounter, currentAt time.Time) []networkRate {
-	before := map[string]networkCounter{}
+func Rates(previous []Counter, previousAt time.Time, current []Counter, currentAt time.Time) []Rate {
+	before := map[string]Counter{}
 	for _, row := range previous {
 		before[row.Name] = row
 	}
 	elapsed := currentAt.Sub(previousAt).Seconds()
-	rates := make([]networkRate, 0, len(current))
+	rates := make([]Rate, 0, len(current))
 	for _, row := range current {
-		rate := networkRate{Name: row.Name, ReceiveTotal: row.Receive, SendTotal: row.Transmit}
+		rate := Rate{Name: row.Name, ReceiveTotal: row.Receive, SendTotal: row.Transmit}
 		old, ok := before[row.Name]
 		if ok && elapsed > 0 && row.Receive >= old.Receive && row.Transmit >= old.Transmit {
 			rate.Receive = float64(row.Receive-old.Receive) / elapsed
@@ -471,8 +429,8 @@ func networkRates(previous []networkCounter, previousAt time.Time, current []net
 	return rates
 }
 
-func collectNetworkView(ctx context.Context, platform string, view int) (networkSnapshot, error) {
-	var result networkSnapshot
+func CollectView(ctx context.Context, platform string, view int) (Snapshot, error) {
+	var result Snapshot
 	switch view {
 	case 3:
 		result.CounterSource = "/proc/net/dev · host interface counters"
@@ -490,21 +448,21 @@ func collectNetworkView(ctx context.Context, platform string, view int) (network
 		return result, err
 	default:
 		var err error
-		result, err = collectNetworkSockets(ctx, platform)
+		result, err = CollectSockets(ctx, platform)
 		result.Interfaces, _ = collectNetworkInterfaces()
 		result.InterfaceAt = time.Now()
 		sortNetworkSockets(result.Sockets)
 		return result, err
 	}
 }
-func sortNetworkSockets(rows []networkSocket) {
+func sortNetworkSockets(rows []Socket) {
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, b := rows[i], rows[j]
-		if a.bound() != b.bound() {
-			return a.bound()
+		if a.Bound() != b.Bound() {
+			return a.Bound()
 		}
-		_, ap := socketEndpoint(a.Local)
-		_, bp := socketEndpoint(b.Local)
+		_, ap := Endpoint(a.Local)
+		_, bp := Endpoint(b.Local)
 		an, _ := strconv.Atoi(ap)
 		bn, _ := strconv.Atoi(bp)
 		if an != bn {
@@ -513,12 +471,12 @@ func sortNetworkSockets(rows []networkSocket) {
 		if a.Protocol != b.Protocol {
 			return a.Protocol < b.Protocol
 		}
-		return a.key() < b.key()
+		return a.Key() < b.Key()
 	})
 }
-func matchesNetworkSocket(s networkSocket, query string) bool {
-	_, localPort := socketEndpoint(s.Local)
-	_, remotePort := socketEndpoint(s.Remote)
+func MatchesSocket(s Socket, query string) bool {
+	_, localPort := Endpoint(s.Local)
+	_, remotePort := Endpoint(s.Remote)
 	for _, term := range strings.Fields(strings.ToLower(query)) {
 		key, value, field := strings.Cut(term, ":")
 		if !field {

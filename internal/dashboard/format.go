@@ -2,14 +2,15 @@ package dashboard
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/rivo/tview"
-)
 
-var ansiSequence = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-_])`)
+	"systemdoc/internal/textutil"
+)
 
 // timestamp recognises ISO, syslog ("Sep 14 16:17:12") and bare clock stamps,
 // so a journal tail inside a status block is dimmed like a Logs tab line.
@@ -68,7 +69,7 @@ func (w *workspace) palette() palette {
 
 // Rich output is built exclusively from escaped text, never trusted input markup.
 func richOutput(raw string, tab int, p palette) string {
-	lines := strings.Split(clean(raw), "\n")
+	lines := strings.Split(textutil.Clean(raw), "\n")
 	paint := func(colour, text string) string { return "[" + colour + "]" + tview.Escape(text) + "[-]" }
 	for i, line := range lines {
 		trim := strings.TrimSpace(line)
@@ -100,4 +101,13 @@ func richOutput(raw string, tab int, p palette) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func sortedKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

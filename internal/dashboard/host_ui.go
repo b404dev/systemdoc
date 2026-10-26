@@ -12,6 +12,10 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/hostgpu"
+	"systemdoc/internal/textutil"
 )
 
 var hostTabNames = []string{"SERVICES", "CONTAINERS", "NETWORK", "PROCESSES", "STORAGE"}
@@ -114,8 +118,11 @@ type hostPage struct {
 	search                          *tview.InputField
 	summary                         *tview.Flex
 	cards                           [3]*tview.TextView
+	gpuCard                         *tview.TextView
 	rows                            []hostRow
 	processes                       []hostProcess
+	gpuProcesses                    map[int]hostgpu.Process
+	gpuSample                       hostgpu.ProcessSample
 	mounts                          []hostMount
 	deleted                         []deletedFile
 	sort                            int
@@ -217,11 +224,17 @@ func (h *hostPage) Draw(screen tcell.Screen) {
 	h.header.SetBorderPadding(0, 0, 1, 0)
 	h.ResizeItem(h.summary, cardsHeight, 0)
 	h.ResizeItem(h.detail, detailHeight, 0)
+	if h.gpuCard != nil {
+		h.w.renderGPUCardInto(h.gpuCard, width, 4)
+	}
 	h.Flex.Draw(screen)
 	p := h.w.palette()
 	rails := map[*tview.Box]string{}
 	for i, card := range h.cards {
 		rails[card.Box] = []string{p.accent, p.warning, p.success}[i]
+	}
+	if h.gpuCard != nil {
+		rails[h.gpuCard.Box] = p.accent
 	}
 	paintSurfaces(screen, h.Flex, p, h.header, h.table, rails, h.w.limitedColours)
 }
@@ -266,6 +279,12 @@ func (w *workspace) hostPage(tab int) {
 		h.cards[i] = card
 		h.summary.AddItem(card, 0, 1, false)
 		w.illuminatePanel(card.Box, nil, func(p palette) string { return []string{panelHue(p, tab), p.warning, p.success}[i] }, true)
+	}
+	if h.tab == 3 {
+		h.gpuCard = textView().SetDynamicColors(true).SetWrap(false)
+		h.gpuCard.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetBorderAttributes(tcell.AttrBold)
+		h.summary.AddItem(h.gpuCard, 0, 1, false)
+		w.illuminatePanel(h.gpuCard.Box, nil, func(p palette) string { return p.accent }, true)
 	}
 	nav, modeButtons, deck := w.hostNavigation(tab, func(target int) {
 		if target == h.tab {
@@ -461,14 +480,24 @@ func (h *hostPage) refresh() {
 	h.lastPoll = time.Now()
 	h.updateStatus()
 	view, generation, platform := h.view(), h.generation, servicePlatform
+	previousGPU := h.gpuSample
 	go func() {
 		var processes []hostProcess
+		var gpuProcesses map[int]hostgpu.Process
+		var gpuSample hostgpu.ProcessSample
 		var mounts []hostMount
 		var deleted []deletedFile
 		var note string
 		var err error
 		if h.tab == 3 {
 			processes, err = collectProcesses(h.ctx)
+			if err == nil {
+				pids := make([]int, len(processes))
+				for i, process := range processes {
+					pids[i] = process.PID
+				}
+				gpuProcesses, gpuSample = hostgpu.CollectProcesses(h.ctx, pids, previousGPU)
+			}
 		} else if view == 1 {
 			deleted, note, err = collectDeletedFiles(h.ctx)
 		} else {
@@ -494,6 +523,7 @@ func (h *hostPage) refresh() {
 				h.note[view] = note
 				if h.tab == 3 {
 					h.processes = processes
+					h.gpuProcesses, h.gpuSample = gpuProcesses, gpuSample
 				} else if view == 1 {
 					h.deleted = deleted
 				} else {
@@ -558,6 +588,9 @@ func (h *hostPage) render() {
 	columns := len(headers)
 	if h.width > 0 && h.width < 100 {
 		columns = min(columns, 4)
+		if h.tab == 3 && h.width >= 80 {
+			columns = min(len(headers), 6)
+		}
 	}
 	if h.width > 0 && h.width < 55 {
 		columns = min(columns, 2)
@@ -575,7 +608,7 @@ func (h *hostPage) render() {
 			if col == 0 {
 				value = " " + value
 			}
-			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(p.text)).SetMaxWidth(16)
+			cell := tview.NewTableCell(tview.Escape(textutil.Clean(value))).SetTextColor(tcell.GetColor(p.text)).SetMaxWidth(16)
 			if numericColumn[headers[col]] {
 				cell.SetAlign(tview.AlignRight)
 			}
@@ -602,7 +635,7 @@ func (h *hostPage) render() {
 
 // numericColumn names the table columns whose values are figures, so they are
 // right-aligned and read as a column of numbers rather than ragged text.
-var numericColumn = map[string]bool{"RSS": true, "PID": true, "ON": true, "PPID": true, "ELAPSED": true, "AVAILABLE": true, "SIZE": true, "USED SPACE": true, "INODES": true, "UID": true, "FD": true}
+var numericColumn = map[string]bool{"GPU": true, "GPU MEM": true, "RSS": true, "PID": true, "ON": true, "PPID": true, "ELAPSED": true, "AVAILABLE": true, "SIZE": true, "USED SPACE": true, "INODES": true, "UID": true, "FD": true}
 
 func (h *hostPage) selectRow(row int) {
 	previous := h.selected
@@ -655,7 +688,7 @@ func (h *hostPage) inspectRecord() {
 func (w *workspace) hostText(title, body string) {
 	focus := w.app.GetFocus()
 	p := w.palette()
-	v := textView().SetWrap(true).SetScrollable(true).SetText(clean(body)).SetTextColor(tcell.GetColor(p.text))
+	v := textView().SetWrap(true).SetScrollable(true).SetText(textutil.Clean(body)).SetTextColor(tcell.GetColor(p.text))
 	v.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetTitle(" " + title + " · Esc returns ").SetTitleColor(tcell.GetColor(p.accent))
 	v.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		if e.Key() == tcell.KeyEscape {
@@ -792,15 +825,15 @@ func verifyAndSignalProcess(ctx context.Context, process hostProcess, signal sys
 	if err := processTargetError(process); err != nil {
 		return err
 	}
-	raw, diagnostic, err := networkCommand(ctx, "ps", "-ww", "-p", strconv.Itoa(process.PID), "-o", "args=")
+	raw, diagnostic, err := commandcapture.Capture(ctx, "ps", "-ww", "-p", strconv.Itoa(process.PID), "-o", "args=")
 	if err != nil {
 		return fmt.Errorf("could not revalidate PID %d: %w %s", process.PID, err, diagnostic)
 	}
-	observed := strings.TrimSpace(clean(raw))
+	observed := strings.TrimSpace(textutil.Clean(raw))
 	if observed == "" {
 		return fmt.Errorf("PID %d exited before the signal was sent", process.PID)
 	}
-	if observed != strings.TrimSpace(clean(process.Command)) {
+	if observed != strings.TrimSpace(textutil.Clean(process.Command)) {
 		return fmt.Errorf("PID %d changed identity; expected %q, now %q", process.PID, process.Command, observed)
 	}
 	target, err := os.FindProcess(process.PID)
@@ -860,7 +893,7 @@ func (h *hostPage) updateStatus() {
 	}
 	note := "Host only · permissions may hide details"
 	if h.tab == 3 {
-		note += " · ps CPU is a lifetime average; RSS may include shared pages"
+		note += " · ps CPU is a lifetime average; RSS may include shared pages · GPU is busiest engine/device; — is unavailable"
 		for _, process := range h.processes {
 			if process.RateCPU {
 				note = strings.Replace(note, "ps CPU is a lifetime average", "CPU is the rate since the previous snapshot", 1)
@@ -885,7 +918,7 @@ func (h *hostPage) updateStatus() {
 	// One line: the counts first, then the caveat, cut with an ellipsis rather
 	// than wrapped, so every host page spends the same two rows on its footer.
 	lead := fmt.Sprintf(" %d rows · %s · poll %ds · ", len(h.rows), state, h.pollSeconds())
-	note = ellipsize(clean(strings.ReplaceAll(note, "\n", " · ")), max(0, h.width-displayWidth(lead)-1))
+	note = ellipsize(textutil.Clean(strings.ReplaceAll(note, "\n", " · ")), max(0, h.width-displayWidth(lead)-1))
 	h.status.SetText(fmt.Sprintf("%s[%s]%s[-]", tview.Escape(lead), colour, tview.Escape(note)))
 }
 
@@ -900,7 +933,7 @@ func (h *hostPage) report() string {
 	for _, r := range h.rows {
 		out.WriteString(r.detail + "\n\n")
 	}
-	return clean(out.String())
+	return textutil.Clean(out.String())
 }
 
 func (h *hostPage) processRows() ([]string, [3]hostCard) {
@@ -970,13 +1003,28 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 		}
 		detail := fmt.Sprintf("PID %d · %s · %s\nCPU %s · RSS %s · elapsed %s\nParent %d · %s\nChildren: %s\nCommand: %s\n\nEnter live activity (threads, switches, I/O, files, journal) · c CPU cores · T sysdig runtime tracing · K process actions · n ports · s service (current scope). Signals require review and PID identity validation.", p.PID, p.User, p.State, cpuText, hostBytes(p.RSS, true), p.Elapsed, p.PPID, available(parents[p.PPID]), available(strings.Join(children[p.PID], ", ")), p.Command)
 		cpuText, _, _ = strings.Cut(cpuText, " · ")
+		gpuText, gpuMemory := "—", "—"
+		gpu, gpuFound := h.gpuProcesses[p.PID]
+		if gpuFound && gpu.Busy >= 0 {
+			gpuText = fmt.Sprintf("%.0f%%", gpu.Busy)
+		}
+		if gpuFound && gpu.MemoryUsed >= 0 {
+			gpuMemory = hostBytes(gpu.MemoryUsed, false)
+		}
+		detail += fmt.Sprintf("\nGPU %s · GPU memory %s (busiest engine/device; buffers may be shared)", gpuText, gpuMemory)
 		cpuCell := cpuText
 		if h.width >= 100 && p.CPU >= 0 {
 			cpuCell = cellGauge(cpuText, p.CPU, 100, 6, glyphs)
 		}
 		parent := parents[p.PPID]
-		rich := func() string { return processRich(pal, glyphs, hue, p, parent, memoryCeiling, logical) }
-		h.rows = append(h.rows, hostRow{key: strconv.Itoa(p.PID), cells: []string{command, cpuCell, hostBytes(p.RSS, true), strconv.Itoa(p.PID), onCPU, p.User, p.State, strconv.Itoa(p.PPID), p.Elapsed}, detail: detail, rich: rich, tint: map[int]string{1: pressureHue(pal, int(max(0, p.CPU)))}, pid: p.PID, warning: strings.HasPrefix(p.State, "Z")})
+		tint := map[int]string{1: pressureHue(pal, int(max(0, p.CPU)))}
+		if gpuFound && gpu.Busy >= 0 {
+			tint[4] = pressureHue(pal, int(gpu.Busy))
+		}
+		rich := func() string {
+			return processRich(pal, glyphs, hue, p, parent, memoryCeiling, logical) + fmt.Sprintf("\n[%s]GPU[-] %s · [%s]GPU MEMORY[-] %s", pal.muted, gpuText, pal.muted, gpuMemory)
+		}
+		h.rows = append(h.rows, hostRow{key: strconv.Itoa(p.PID), cells: []string{command, cpuCell, hostBytes(p.RSS, true), strconv.Itoa(p.PID), gpuText, gpuMemory, onCPU, p.User, p.State, strconv.Itoa(p.PPID), p.Elapsed}, detail: detail, rich: rich, tint: tint, pid: p.PID, warning: strings.HasPrefix(p.State, "Z")})
 	}
 	mode := []string{"CPU", "MEMORY", "PID"}[h.sort]
 	if h.tree {
@@ -989,7 +1037,7 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 	// are named as such so the two are never read as the same measurement.
 	chartWidth := 20
 	if h.width > 0 {
-		chartWidth = max(8, h.width/3-8)
+		chartWidth = max(8, h.width/4-8)
 	}
 	// Beside the CPU trend, one bar per logical CPU at its own busy share and
 	// the clock line beneath it. The trend gives up columns for the strip only
@@ -1029,7 +1077,7 @@ func (h *hostPage) processRows() ([]string, [3]hostCard) {
 	if usage.memOK {
 		memoryHeadline = fmt.Sprintf("%.0f%% host · %s", usage.memPercent, hostBytesPair(usage.memUsed, usage.memTotal))
 	}
-	return []string{"COMMAND", "CPU", "RSS", "PID", "ON", "USER", "STATE", "PPID", "ELAPSED"}, [3]hostCard{
+	return []string{"COMMAND", "CPU", "RSS", "PID", "GPU", "GPU MEM", "ON", "USER", "STATE", "PPID", "ELAPSED"}, [3]hostCard{
 		{title: "PROCESSES", headline: fmt.Sprintf("%d observed", len(h.processes)), visual: signalMeter(float64(running), float64(len(h.processes)), 20, glyphs), note: fmt.Sprintf("%d on a CPU at sample · %d zombies%s", running, zombies, pressurePlain(usage.pressure))},
 		{title: cpuTitle, headline: fmt.Sprintf("%s · %.1f%% summed", cpuHeadline, cpu), visual: cpuTrend, chart: true, aside: cpuAside},
 		{title: "HOST MEMORY", headline: fmt.Sprintf("%s · %s RSS", memoryHeadline, hostBytes(rss, true)), visual: memoryTrend, chart: true},
@@ -1067,9 +1115,9 @@ func processRich(pal palette, glyphs, hue string, p hostProcess, parent string, 
 		memoryGauge = gaugeLine("MEMORY", float64(p.RSS), float64(memoryCeiling), 20, hueOf(pal, hue), pal, glyphs, hostBytes(p.RSS, true), "RSS · largest observed process sets the scale")
 	}
 	return fmt.Sprintf("[%s::b]%s[-::-]\n%s\n%s\n[%s]PID[-] [%s::b]%d[-::-]  [%s]%s[-]  [%s::b] %s [-::-]  [%s]elapsed %s · parent %d %s[-]",
-		hue, tview.Escape(clean(p.Command)), cpuGauge, memoryGauge,
-		pal.muted, hue, p.PID, pal.muted, tview.Escape(clean(p.User)), stateHue, tview.Escape(clean(stateText)),
-		pal.muted, tview.Escape(clean(p.Elapsed)), p.PPID, tview.Escape(clean(available(parent))))
+		hue, tview.Escape(textutil.Clean(p.Command)), cpuGauge, memoryGauge,
+		pal.muted, hue, p.PID, pal.muted, tview.Escape(textutil.Clean(p.User)), stateHue, tview.Escape(textutil.Clean(stateText)),
+		pal.muted, tview.Escape(textutil.Clean(p.Elapsed)), p.PPID, tview.Escape(textutil.Clean(available(parent))))
 }
 
 func (h *hostPage) mountRows() ([]string, [3]hostCard) {
@@ -1133,7 +1181,7 @@ func mountRich(p palette, mode, hue string, m hostMount, free, spaceHue string) 
 			fmt.Sprintf("%s used / %s total · %s free", hostCount(m.InodeUsed), hostCount(m.Inodes), hostCount(m.InodeFree)))
 	}
 	return fmt.Sprintf("[%s::b]%s[-::-]  [%s]%s[-]\n%s\n%s\n[%s]Shared pools, bind mounts and reserved blocks affect accounting.[-]",
-		hue, tview.Escape(clean(m.Path)), p.muted, tview.Escape(clean(m.Source)),
+		hue, tview.Escape(textutil.Clean(m.Path)), p.muted, tview.Escape(textutil.Clean(m.Source)),
 		gaugeLine("SPACE", float64(m.Percent), 100, 26, hueOf(p, spaceHue), p, mode, fmt.Sprintf("%d%%", m.Percent),
 			fmt.Sprintf("%s used · %s free · %s total", hostBytes(m.Used, true), tview.Escape(free), hostBytes(m.Size, true))),
 		inodeGauge, p.muted)

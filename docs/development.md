@@ -39,11 +39,21 @@ Review all themes and both modes. Screenshots published in documentation must sa
 
 - `cmd/systemdoc`: flags, version, local/remote dispatch.
 - `internal/dashboard`: UI, systemd/launchd/Docker backends, workflows, state, themes.
+- `internal/hostnet`: socket collection/parsing, interface counters, rates and filters; no UI dependencies.
+- `internal/dockerinspect`: readable Docker inspection output and its JSON fixture; no UI dependencies.
+- `internal/commandcapture`: bounded structured command output, separate diagnostics and cancellation.
+- `internal/textutil`: shared plain-text sanitization and formatting.
 - `internal/remote`: OpenSSH launch, keys, compatibility checks.
 - `scripts`: installer tests, release build, preview rendering.
 - `docs`: user and maintainer guides, generated visual assets.
 - `playground`: optional real Docker containers.
 
 See [architecture](../SPEC.md) for data flow and [the release guide](releasing.md) for packaging.
+
+For network collection or Docker inspection changes, start in their packages
+and run `go test ./internal/hostnet ./internal/dockerinspect ./internal/commandcapture`.
+The dashboard retains UI and routing integration tests. The root [agent guide](../AGENTS.md)
+maps other features to their starting files; reading the entire dashboard is
+unnecessary for a focused change.
 
 The existing fake-systemd suite pins its service platform before workers start, including on macOS CI. Launchd adapters are tested directly, and Darwin routing runs in an isolated test process. On a Mac, `SYSTEMDOC_LIVE_LAUNCHD=1 go test ./internal/dashboard -run TestLiveLaunchdReadOnly` exercises read-only system-domain inventory.

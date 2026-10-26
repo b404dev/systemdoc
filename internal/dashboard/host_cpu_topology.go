@@ -7,6 +7,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/textutil"
 )
 
 // cpuInventory is what the machine has, read once at start: how many logical
@@ -81,7 +84,7 @@ func parseCPUInfo(raw string) (inventory cpuInventory, clocks cpuClocks) {
 			seenProcessor = true
 		case "model name", "Model", "Hardware", "cpu model":
 			if inventory.model == "" && value != "" {
-				inventory.model = clean(value)
+				inventory.model = textutil.Clean(value)
 			}
 		case "physical id":
 			current.pkg = value
@@ -278,7 +281,7 @@ func collectLinuxClocks(procRoot, sysRoot string, logical int) cpuClocks {
 func collectDarwinCPUInventory(ctx context.Context, fallbackLogical int) (cpuInventory, cpuClocks) {
 	inventory := cpuInventory{logical: fallbackLogical, ok: fallbackLogical > 0}
 	number := func(key string) (int64, bool) {
-		raw, _, err := networkCommand(ctx, "sysctl", "-n", key)
+		raw, _, err := commandcapture.Capture(ctx, "sysctl", "-n", key)
 		if err != nil {
 			return 0, false
 		}
@@ -294,8 +297,8 @@ func collectDarwinCPUInventory(ctx context.Context, fallbackLogical int) (cpuInv
 	if n, ok := number("hw.packages"); ok {
 		inventory.sockets = int(n)
 	}
-	if raw, _, err := networkCommand(ctx, "sysctl", "-n", "machdep.cpu.brand_string"); err == nil {
-		inventory.model = clean(strings.TrimSpace(raw))
+	if raw, _, err := commandcapture.Capture(ctx, "sysctl", "-n", "machdep.cpu.brand_string"); err == nil {
+		inventory.model = textutil.Clean(strings.TrimSpace(raw))
 	}
 	var clocks cpuClocks
 	if hz, ok := number("hw.cpufrequency"); ok && inventory.logical > 0 {

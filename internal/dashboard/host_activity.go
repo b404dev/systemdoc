@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 // Process Activity digs one level below the process table: which threads are
@@ -368,9 +370,9 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 	if current != nil && current.Comm != "" && !strings.Contains(title, current.Comm) {
 		title = strings.TrimSuffix(current.Comm+" · "+title, " · ")
 	}
-	fmt.Fprintf(&out, "[%s::b]%s[-::-]\n", hue, tview.Escape(clean(title)))
+	fmt.Fprintf(&out, "[%s::b]%s[-::-]\n", hue, tview.Escape(textutil.Clean(title)))
 	if note != "" {
-		fmt.Fprintf(&out, "[%s::b]%s[-::-]\n\n", p.error, tview.Escape(clean(note)))
+		fmt.Fprintf(&out, "[%s::b]%s[-::-]\n\n", p.error, tview.Escape(textutil.Clean(note)))
 	}
 	if current == nil {
 		fmt.Fprintf(&out, "[%s]Reading /proc/%d…[-]\n", p.muted, process.PID)
@@ -381,10 +383,10 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 	if paused {
 		stamp = "PAUSED · Space resumes · sampled " + current.At.Format("15:04:05")
 	}
-	fmt.Fprintf(&out, "[%s]PID %d · %s · %s[-]\n\n", p.muted, process.PID, tview.Escape(clean(process.User)), stamp)
+	fmt.Fprintf(&out, "[%s]PID %d · %s · %s[-]\n\n", p.muted, process.PID, tview.Escape(textutil.Clean(process.User)), stamp)
 	section := func(name string) { fmt.Fprintf(&out, "[%s::b]── %s[-::-]\n", hue, name) }
 	field := func(label, value string) { fmt.Fprintf(&out, "  [%s]%-10s[-] %s\n", p.muted, label, value) }
-	muted := func(text string) string { return fmt.Sprintf("[%s]%s[-]", p.muted, tview.Escape(clean(text))) }
+	muted := func(text string) string { return fmt.Sprintf("[%s]%s[-]", p.muted, tview.Escape(textutil.Clean(text))) }
 
 	section("VITALS")
 	stateHue := p.muted
@@ -394,7 +396,7 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 	if strings.HasPrefix(current.State, "D") || strings.HasPrefix(current.State, "Z") {
 		stateHue = p.warning
 	}
-	field("State", fmt.Sprintf("[%s::b]%s[-::-]  %s", stateHue, tview.Escape(clean(stateWord(current.State))), muted(fmt.Sprintf("%d threads · nice %d", current.Threads, current.Nice))))
+	field("State", fmt.Sprintf("[%s::b]%s[-::-]  %s", stateHue, tview.Escape(textutil.Clean(stateWord(current.State))), muted(fmt.Sprintf("%d threads · nice %d", current.Threads, current.Nice))))
 	logical := host.cpus.logical
 	if rates.Valid {
 		cpuHue := pressureHue(p, int(rates.CPU))
@@ -419,7 +421,7 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 	if current.CPUsAllowed != "" {
 		allowed := "allowed " + current.CPUsAllowed
 		if logical > 0 && cpuListCount(current.CPUsAllowed) < logical {
-			allowed = fmt.Sprintf("[%s]confined to CPUs %s[-]", p.warning, tview.Escape(clean(current.CPUsAllowed)))
+			allowed = fmt.Sprintf("[%s]confined to CPUs %s[-]", p.warning, tview.Escape(textutil.Clean(current.CPUsAllowed)))
 		}
 		placement += "  " + allowed
 	}
@@ -456,13 +458,13 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 		field("Files", muted(current.FDNote))
 	}
 	if current.Unit != "" {
-		field("Service", tview.Escape(clean(current.Unit))+"  "+muted("s opens it in Services"))
+		field("Service", tview.Escape(textutil.Clean(current.Unit))+"  "+muted("s opens it in Services"))
 	}
 	if current.Executable != "" {
-		field("Executable", tview.Escape(clean(current.Executable)))
+		field("Executable", tview.Escape(textutil.Clean(current.Executable)))
 	}
 	if current.WorkingDir != "" {
-		field("Workdir", tview.Escape(clean(current.WorkingDir)))
+		field("Workdir", tview.Escape(textutil.Clean(current.WorkingDir)))
 	}
 	if len(children) > 0 {
 		names := make([]string, 0, len(children))
@@ -473,7 +475,7 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 			}
 			names = append(names, fmt.Sprintf("%d %s", child.PID, shortCommand(child.Command)))
 		}
-		field("Children", tview.Escape(clean(strings.Join(names, " · "))))
+		field("Children", tview.Escape(textutil.Clean(strings.Join(names, " · "))))
 	}
 
 	out.WriteByte('\n')
@@ -517,7 +519,7 @@ func renderProcessActivity(p palette, glyphs string, process hostProcess, previo
 		if logical > 1 {
 			on = muted(fmt.Sprintf("  on CPU %d", task.CPU))
 		}
-		fmt.Fprintf(&out, "  [%s]%-10d[-] %-20s [%s]%s[-]  %s%s\n", p.muted, task.TID, tview.Escape(clean(task.Name)), stateHue, task.State, cpu, on)
+		fmt.Fprintf(&out, "  [%s]%-10d[-] %-20s [%s]%s[-]  %s%s\n", p.muted, task.TID, tview.Escape(textutil.Clean(task.Name)), stateHue, task.State, cpu, on)
 	}
 	if rates.Valid && len(tasks) > 0 {
 		fmt.Fprintf(&out, "  %s\n", muted(fmt.Sprintf("%d of %d threads used CPU in the last sample", busy, len(tasks))))
