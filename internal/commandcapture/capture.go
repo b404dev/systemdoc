@@ -29,6 +29,7 @@ func (b *prefixBuffer) Write(p []byte) (int, error) {
 	_, _ = b.Buffer.Write(p)
 	return n, nil
 }
+
 // Capture returns stdout, sanitized stderr and the command error. Each stream
 // is capped at 4 MiB; overflow invalidates the entire structured snapshot.
 // Commands use the C locale and an eight-second timeout bounded by ctx.
