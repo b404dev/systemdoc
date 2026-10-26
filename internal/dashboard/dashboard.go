@@ -417,7 +417,7 @@ func (w *workspace) buildDashboard() {
 	w.illuminate(w.selectionCard.Box, nil, accent)
 	for i, card := range w.cards {
 		w.illuminate(card.Box, func() bool { return i < 2 && w.quickFilter == i+1 }, func(p palette) string {
-			return []string{p.success, p.error, p.accent, p.warning}[i]
+			return []string{p.success, p.error, p.accent, p.warning, p.accent}[i]
 		})
 	}
 	w.layoutDashboard(120, 30)
@@ -578,10 +578,10 @@ func (w *workspace) updateDashboard() {
 	if totals.memoryCount > 0 {
 		memory = fmt.Sprintf("%.1f MiB", totals.memory)
 	}
-	// Each card takes a quarter of the width and its rail frame keeps two
-	// cells on either side, so the trail must fit width/4-4 or the newest
+	// Each card shares the width and its rail frame keeps two
+	// cells on either side, so the trail must fit or the newest
 	// samples, the ones on the right, are clipped off the card.
-	chartWidth := max(1, w.lastWidth/4-4)
+	chartWidth := max(1, w.lastWidth/len(w.cards)-4)
 	if w.lastWidth == 0 {
 		chartWidth = 24
 	}
@@ -625,6 +625,7 @@ func (w *workspace) updateDashboard() {
 		}
 		card.SetBorderColor(tcell.GetColor(border))
 	}
+	w.renderGPUCard()
 	shortStatus := "waiting"
 	if w.limitedColours {
 		shortStatus = "256 colours · see troubleshooting"

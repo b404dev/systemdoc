@@ -71,7 +71,7 @@ type workspace struct {
 	// telemetryDirty is raised when a host sample or inventory changes what
 	// the cards show; the one-second tick draws a frame only when it is set.
 	telemetryDirty              atomic.Bool
-	cards                       [4]*tview.TextView
+	cards                       [5]*tview.TextView
 	modeButtons                 [2]*tview.Button
 	tabButtons                  [5]*tview.Button
 	toolbarButtons              []*tview.Button
@@ -82,6 +82,7 @@ type workspace struct {
 	hostCPUHistory              []float64
 	hostCoreHistory             [][]float64
 	hostMemoryHistory           []float64
+	hostGPUHistory              map[string][]float64
 	lastRefresh                 [2]time.Time
 	backendError                [2]bool
 	// inventoryNote names an accounting source that failed on the last poll.
@@ -380,6 +381,13 @@ func hostReadout(p palette, usage hostUtilisation, width int) string {
 		readout += fmt.Sprintf(" [%s]%s[-]", p.muted, tview.Escape(label))
 	}
 	readout += fmt.Sprintf(" [%s]·[-] [%s::b]MEM %s[-::-]", p.muted, memoryHue, memory)
+	for i, gpu := range usage.gpus {
+		value, hue := "—", p.muted
+		if gpu.Busy >= 0 {
+			value, hue = fmt.Sprintf("%.0f%%", gpu.Busy), pressureHue(p, int(gpu.Busy))
+		}
+		readout += fmt.Sprintf(" [%s]·[-] [%s::b]GPU%d %s[-::-]", p.muted, hue, i, value)
+	}
 	if usage.loadOK {
 		readout += fmt.Sprintf(" [%s]·[-] [%s::b]LOAD %.2f[-::-]", p.muted, p.text, usage.load1)
 	}

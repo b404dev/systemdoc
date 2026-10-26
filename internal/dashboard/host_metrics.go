@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/hostgpu"
 )
 
 // hostUtilisation is whole-machine utilisation. It is deliberately separate
 // from fleetSample, which only ever sums the workloads Systemdoc observed, so
 // a missing host reading can never be mistaken for a workload measurement.
 type hostUtilisation struct {
+	gpus       []hostgpu.Device
 	cpuPercent float64
 	cpuOK      bool
 	memPercent float64
@@ -461,6 +463,7 @@ func (w *workspace) hostMetricsLoop(cores int) {
 	defer ticker.Stop()
 	for {
 		usage, sample := collectHostUtilisation(w.ctx, servicePlatform, cores, previous)
+		usage.gpus = hostgpu.Collect(w.ctx)
 		previous = sample
 		usage.cpus = inventory
 		if servicePlatform == "darwin" {
@@ -489,6 +492,18 @@ func (w *workspace) recordHostUtilisation(usage hostUtilisation) {
 	}
 	w.hostCPUHistory = appendBounded(w.hostCPUHistory, cpu)
 	w.hostMemoryHistory = appendBounded(w.hostMemoryHistory, memory)
+	if len(usage.gpus) == 0 {
+		for key, history := range w.hostGPUHistory {
+			w.hostGPUHistory[key] = appendBounded(history, -1)
+		}
+	} else {
+		next := make(map[string][]float64, len(usage.gpus))
+		for i, gpu := range usage.gpus {
+			key := gpuHistoryKey(gpu, i)
+			next[key] = appendBounded(w.hostGPUHistory[key], gpu.Busy)
+		}
+		w.hostGPUHistory = next
+	}
 	// One trail per logical CPU, kept in step with the aggregate: a sample
 	// without per-CPU figures stores a gap in every trail.
 	if count := max(len(usage.coreBusy), len(w.hostCoreHistory)); count > 0 {

@@ -130,7 +130,7 @@ func TestPaintSurfacesMatchesLegacyPerCellFormula(t *testing.T) {
 					root, header, table = w.root, w.header, w.table
 					rails[w.selectionCard.Box] = p.accent
 					for i, card := range w.cards {
-						rails[card.Box] = []string{p.success, p.error, p.accent, p.glow}[i]
+						rails[card.Box] = []string{p.success, p.error, p.accent, p.glow, p.accent}[i]
 					}
 				}
 				reference := tcell.NewSimulationScreen("UTF-8")

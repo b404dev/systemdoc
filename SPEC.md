@@ -18,6 +18,7 @@ A Linux and macOS terminal workspace with two modes: native services (systemd on
 | Docker | Installed CLI, pinned endpoint, `ps`, `stats`, container-typed `inspect`, streaming logs |
 | Docker overview | Typed projection of inspect JSON into identity, ports, mounts, networks, runtime, labels; raw JSON remains available |
 | Kubernetes | Detected kubectl invocation (`kubectl`, `k0s kubectl`, `k3s kubectl`, `microk8s kubectl`, kind contexts, or `--kubectl`/`SYSTEMDOC_KUBECTL`); node list names the distribution; `get pods -A -o json`, `top pods`, pod JSON/YAML, events, Services, prefixed multi-container logs; `rollout restart` and `delete pod` as reviewed actions |
+| Host GPU | NVIDIA/DRM device telemetry with bounded per-device history; NVIDIA pmon and DRM fdinfo process usage/memory |
 | Host network | TCP/UDP socket ownership, interfaces, and successive-counter download/upload rates from `/proc/net/dev` or `netstat -ibn` |
 | Compose | Installed `docker compose`; project files, profiles, environment files, workdir, endpoint |
 | Settings | JSON under XDG config, owner-only atomic saves |
@@ -32,7 +33,8 @@ Versions are pinned in [go.mod](go.mod). Release binaries use `CGO_ENABLED=0` fo
 `internal/dashboard` owns terminal widgets, navigation, refresh scheduling and
 action review. It calls `internal/hostnet` for network collection, parsing,
 filtering and rate calculation, and `internal/dockerinspect` for readable
-container inspection output. These packages own their component tests and
+container inspection output. `internal/hostgpu` owns GPU device and process
+collection, parsing and interval calculation. These packages own their component tests and
 have no dependency on dashboard state, tview or tcell. Dashboard tests cover
 their integration with the UI.
 

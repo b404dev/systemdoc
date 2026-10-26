@@ -1,5 +1,13 @@
 # Process Explorer and Disk & Storage
 
+## GPU usage
+
+The **HOST GPU** card appears on the dashboard and in Process Explorer alongside CPU and memory. Each device has a compact usage/VRAM/temperature headline and a two-row history chart, drawn with the same fixed 0–100% scale and block/braille/ASCII setting as CPU and memory. History retains the latest 64 host samples; missing readings leave gaps. The card keeps the other cards’ five-line height. Scroll within it for additional devices. Memory suffixes use binary units (for example `42% 512M/8G 63°C`). No detail popup or shortcut is required.
+
+Readings refresh with host metrics; unavailable values remain unknown. NVIDIA requires a working `nvidia-smi` and driver. Linux drivers exposing `gpu_busy_percent` and `mem_info_vram_*` under DRM sysfs (including AMD) are also supported. Intel drivers without those counters and macOS GPU telemetry are currently unsupported. This monitors GPU workloads; it does not configure GPU access for containers or accelerate Systemdoc itself.
+
+Process Explorer adds **GPU** and **GPU MEM** columns, also shown in the selected process band and exported records. GPU readings follow the process snapshot cadence (at least 15 seconds); the GPU card uses the independent host sample cadence. NVIDIA uses [`nvidia-smi pmon`](https://docs.nvidia.com/deploy/nvidia-smi/#process-monitoring) for compute and graphics clients. Linux drivers exposing [DRM fdinfo counters](https://www.kernel.org/doc/html/latest/gpu/drm-usage-stats.html) supply per-process engine usage and resident VRAM or system GPU memory. DRM usage needs two process snapshots. The percentage is the busiest engine/device, while memory includes the process’s observed GPU buffers and may include shared allocations. Unsupported or inaccessible readings show `—`, including processes absent from the driver’s snapshot.
+
 Press **4** for Process Explorer or **5** for Disk & Storage. Both are also available in the top navigation and Actions menu. They inspect the host running Systemdoc, independently of the Docker context, and share the dashboard header, gradient cards, selection styling and keyboard navigation.
 
 Each panel carries its own view rail beneath the cards, naming the two views that suite actually has: **Flat** and **Tree** for processes, **Filesystems** and **Deleted but open** for storage. The rail is clickable and mirrors the keyboard. Where the terminal is at least 100 columns wide the header also carries the host CPU and memory readout described in [the dashboard guide](usage.md).
