@@ -4,6 +4,10 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+## v0.3.0 - 2026-10-26
+
+Live GPU telemetry and per-process GPU readings, CPU core inspection, and independently testable backend collectors.
+
 ### Changed
 
 - Extracted host network collection, Docker inspection formatting, bounded command capture and plain-text helpers from the dashboard into independently testable packages. Component tests and the Docker fixture now live beside their implementations; the agent guide maps features to their owning files and packages.
