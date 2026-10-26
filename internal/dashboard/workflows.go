@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 func (w *workspace) refreshLoop() {
@@ -243,7 +245,7 @@ func (w *workspace) projectDialog() {
 			w.projects = projects
 			w.showProjects()
 			if err != nil {
-				w.footer.SetText(" Compose discovery: " + clean(err.Error()))
+				w.footer.SetText(" Compose discovery: " + textutil.Clean(err.Error()))
 			}
 		})
 	}()

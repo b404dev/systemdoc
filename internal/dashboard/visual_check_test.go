@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+
+	"systemdoc/internal/dockerinspect"
+	"systemdoc/internal/hostnet"
 )
 
 // This opt-in test exports terminal cells for visual review, without adding any
@@ -63,11 +66,11 @@ func TestVisualReview(t *testing.T) {
 		}
 		w.activity = []activityEvent{{mode: 1, id: "website-worker-1", text: "running → restarting", at: time.Now().Add(-time.Minute)}, {mode: 1, id: "website-web-1", text: "health starting → healthy", at: time.Now().Add(-15 * time.Second)}}
 		w.applyTheme()
-		raw, err := os.ReadFile("testdata/docker-inspect.json")
+		raw, err := os.ReadFile("../dockerinspect/testdata/docker-inspect.json")
 		if err != nil {
 			t.Fatal(err)
 		}
-		overview, err := dockerOverview(string(raw), false)
+		overview, err := dockerinspect.Overview(string(raw), false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,13 +80,13 @@ func TestVisualReview(t *testing.T) {
 		w.networkPage()
 		_, page := w.pages.GetFrontPage()
 		n := page.(*networkPage)
-		n.snapshot = networkSnapshot{Source: "fixture · illustrative data", CounterSource: "fixture · host interface counters", At: time.Now(), CounterAt: time.Now(), Sockets: []networkSocket{
+		n.snapshot = hostnet.Snapshot{Source: "fixture · illustrative data", CounterSource: "fixture · host interface counters", At: time.Now(), CounterAt: time.Now(), Sockets: []hostnet.Socket{
 			{Protocol: "TCP", Family: "IPv4", State: "LISTEN", Local: "127.0.0.1:3000", Remote: "0.0.0.0:*", Process: "node", PID: 1842, User: "demo", FD: "21", Cgroup: "/user.slice/dev-server.service"},
 			{Protocol: "TCP", Family: "IPv6", State: "LISTEN", Local: "[::]:5432", Remote: "[::]:*", Process: "postgres", PID: 2201, User: "postgres", FD: "6"},
 			{Protocol: "TCP", Family: "IPv4", State: "LISTEN", Local: "0.0.0.0:8080", Remote: "0.0.0.0:*", Process: "python", PID: 3244, User: "demo", FD: "3"},
 			{Protocol: "UDP", Family: "IPv4", State: "UNCONN", Local: "0.0.0.0:5353", Remote: "0.0.0.0:*", Process: "", PID: 0, UID: "70"},
 		}}
-		n.rates = []networkRate{
+		n.rates = []hostnet.Rate{
 			{Name: "eth0", Receive: 24.8 * 1024 * 1024, Transmit: 3.7 * 1024 * 1024, ReceiveTotal: 18 * 1024 * 1024 * 1024, SendTotal: 7 * 1024 * 1024 * 1024, Ready: true},
 			{Name: "tailscale0", Receive: 1.2 * 1024 * 1024, Transmit: 840 * 1024, ReceiveTotal: 4 * 1024 * 1024 * 1024, SendTotal: 2 * 1024 * 1024 * 1024, Ready: true},
 			{Name: "lo", Receive: 128 * 1024, Transmit: 128 * 1024, ReceiveTotal: 900 * 1024 * 1024, SendTotal: 900 * 1024 * 1024, Ready: true},

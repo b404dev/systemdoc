@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"systemdoc/internal/textutil"
 )
 
 // Overview is a readable projection of one pod. Environment values and
@@ -131,7 +133,7 @@ func kubeSectionWriter(out *strings.Builder) (func(string), func(string, string)
 		fmt.Fprintf(out, "── %s\n", title)
 	}
 	field := func(label, value string) {
-		value = strings.Join(strings.Fields(clean(value)), " ")
+		value = strings.Join(strings.Fields(textutil.Clean(value)), " ")
 		fmt.Fprintf(out, "  %-12s %s\n", label, available(value))
 	}
 	return section, field
@@ -205,10 +207,10 @@ func writePodContainers(section func(string), field func(string, string), pod ku
 					}
 				}
 				if len(container.Command) > 0 {
-					field("Command", dockerArgv(container.Command))
+					field("Command", textutil.Argv(container.Command))
 				}
 				if len(container.Args) > 0 {
-					field("Args", dockerArgv(container.Args))
+					field("Args", textutil.Argv(container.Args))
 				}
 				field("Requests", kubeResources(container.Resources.Requests))
 				field("Limits", kubeResources(container.Resources.Limits))

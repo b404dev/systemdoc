@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"systemdoc/internal/commandcapture"
 )
 
 // hostUtilisation is whole-machine utilisation. It is deliberately separate
@@ -408,11 +410,11 @@ func pressureSignal(p palette, pressure hostPressure) string {
 // CPU is summed from live process shares and memory from page accounting.
 func collectDarwinUtilisation(ctx context.Context, cores int) hostUtilisation {
 	var result hostUtilisation
-	if raw, _, err := networkCommand(ctx, "ps", "-A", "-o", "%cpu="); err == nil {
+	if raw, _, err := commandcapture.Capture(ctx, "ps", "-A", "-o", "%cpu="); err == nil {
 		result.cpuPercent, result.cpuOK = parseProcessCPU(raw, cores)
 	}
 	total := int64(0)
-	if raw, _, err := networkCommand(ctx, "sysctl", "-n", "hw.memsize"); err == nil {
+	if raw, _, err := commandcapture.Capture(ctx, "sysctl", "-n", "hw.memsize"); err == nil {
 		if value, convErr := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); convErr == nil {
 			total = value
 		}
@@ -420,7 +422,7 @@ func collectDarwinUtilisation(ctx context.Context, cores int) hostUtilisation {
 	if total <= 0 {
 		return result
 	}
-	if raw, _, err := networkCommand(ctx, "vm_stat"); err == nil {
+	if raw, _, err := commandcapture.Capture(ctx, "vm_stat"); err == nil {
 		if used, ok := parseVMStat(raw); ok {
 			used = max(0, min(total, used))
 			result.memUsed, result.memTotal, result.memOK = used, total, true

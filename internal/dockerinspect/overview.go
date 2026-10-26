@@ -1,4 +1,5 @@
-package dashboard
+// Package dockerinspect formats Docker inspection JSON for human reading.
+package dockerinspect
 
 import (
 	"encoding/json"
@@ -6,6 +7,8 @@ import (
 	"net"
 	"sort"
 	"strings"
+
+	"systemdoc/internal/textutil"
 )
 
 type dockerPortBinding struct{ HostIP, HostPort string }
@@ -57,7 +60,7 @@ type dockerInspection struct {
 
 // Overview is a readable projection of one container inspection. Config keeps
 // the complete JSON; environment values are not copied into the overview.
-func dockerOverview(raw string, connectionsOnly bool) (string, error) {
+func Overview(raw string, connectionsOnly bool) (string, error) {
 	var rows []dockerInspection
 	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
 		return "", fmt.Errorf("decode Docker container inspection: %w", err)
@@ -74,8 +77,11 @@ func dockerOverview(raw string, connectionsOnly bool) (string, error) {
 		fmt.Fprintf(&out, "── %s\n", title)
 	}
 	field := func(label, value string) {
-		value = strings.Join(strings.Fields(clean(value)), " ")
-		fmt.Fprintf(&out, "  %-12s %s\n", label, available(value))
+		value = strings.Join(strings.Fields(textutil.Clean(value)), " ")
+		if value == "" {
+			value = "—"
+		}
+		fmt.Fprintf(&out, "  %-12s %s\n", label, value)
 	}
 	yesNo := func(value bool) string {
 		if value {
@@ -261,8 +267,8 @@ func dockerOverview(raw string, connectionsOnly bool) (string, error) {
 			field("OOM killed", yesNo(c.State.OOMKilled))
 		}
 		if c.Config != nil {
-			field("Entrypoint", dockerArgv(c.Config.Entrypoint))
-			field("Command", dockerArgv(c.Config.Cmd))
+			field("Entrypoint", textutil.Argv(c.Config.Entrypoint))
+			field("Command", textutil.Argv(c.Config.Cmd))
 			field("Hostname", c.Config.Hostname)
 			user := c.Config.User
 			if user == "" {
@@ -311,15 +317,6 @@ func dockerOverview(raw string, connectionsOnly bool) (string, error) {
 	return out.String(), nil
 }
 
-func sortedKeys[V any](values map[string]V) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func dockerTimestamp(value string) string {
 	if strings.HasPrefix(value, "0001-01-01") {
 		return "—"
@@ -327,13 +324,11 @@ func dockerTimestamp(value string) string {
 	return value
 }
 
-func dockerArgv(args []string) string {
-	if len(args) == 0 {
-		return "—"
+func sortedKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
-	parts := make([]string, len(args))
-	for i, arg := range args {
-		parts[i] = fmt.Sprintf("%q", arg)
-	}
-	return strings.Join(parts, " ")
+	sort.Strings(keys)
+	return keys
 }

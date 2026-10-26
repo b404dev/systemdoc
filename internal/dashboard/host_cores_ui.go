@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 // CPU Cores is the per-CPU view the cards only hint at: every logical CPU on
@@ -108,12 +110,12 @@ func (c *coresView) input(e *tcell.EventKey) *tcell.EventKey {
 func renderCPUCores(p palette, glyphs string, usage hostUtilisation, hostHistory []float64, coreHistory [][]float64, processes []hostProcess, withProcesses, sortBusy bool, width int, now time.Time) string {
 	var out strings.Builder
 	hue := panelHue(p, 3)
-	muted := func(text string) string { return fmt.Sprintf("[%s]%s[-]", p.muted, tview.Escape(clean(text))) }
+	muted := func(text string) string { return fmt.Sprintf("[%s]%s[-]", p.muted, tview.Escape(textutil.Clean(text))) }
 	title := "CPU CORES"
 	if usage.cpus.model != "" {
 		title += " · " + usage.cpus.model
 	}
-	fmt.Fprintf(&out, "[%s::b]%s[-::-]\n", hue, tview.Escape(clean(title)))
+	fmt.Fprintf(&out, "[%s::b]%s[-::-]\n", hue, tview.Escape(textutil.Clean(title)))
 	detail := cpuInventoryDetail(usage)
 	if usage.cpus.model != "" {
 		detail = strings.Replace(detail, " · "+usage.cpus.model, "", 1)
@@ -260,7 +262,7 @@ func renderCPUCores(p palette, glyphs string, usage hostUtilisation, hostHistory
 		if processWidth > 8 {
 			if process, ok := busiest[cpu]; ok {
 				label := fmt.Sprintf("%s · PID %d · %.1f%%", shortCommand(process.Command), process.PID, process.CPU)
-				fmt.Fprintf(&out, "  %s", tview.Escape(clean(ellipsize(label, processWidth))))
+				fmt.Fprintf(&out, "  %s", tview.Escape(textutil.Clean(ellipsize(label, processWidth))))
 			} else if n := placed[cpu]; n > 0 {
 				fmt.Fprintf(&out, "  %s", muted(fmt.Sprintf("idle · %d processes last here", n)))
 			} else {

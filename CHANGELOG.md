@@ -4,6 +4,10 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+### Changed
+
+- Extracted host network collection, Docker inspection formatting, bounded command capture and plain-text helpers from the dashboard into independently testable packages. Component tests and the Docker fixture now live beside their implementations; the agent guide maps features to their owning files and packages.
+
 ### Added
 
 - CPU Cores view. `c` in Process Explorer, `C` on the dashboard or a click on the HOST CPU card opens a per-CPU table: for every logical CPU its core and socket, busy meter and share on the severity ramp, the interval split into user, system, iowait and steal time (iowait from 10% and steal from 5% highlighted), current clock, its own trend and the busiest process last scheduled on it with PID and share; idle CPUs say how many processes were last placed there instead of naming a sleeper. The header carries the whole-machine share, three load averages, stall reading, host trend and the CPU inventory. `S` orders by busiest or by number. The view redraws on the existing two-second host sample and adds no polling; a narrow terminal drops the trend and process columns but keeps every CPU.

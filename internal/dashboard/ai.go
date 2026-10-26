@@ -10,6 +10,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 // Provider invocations intentionally disable execution tools. Unsupported flags fail closed.
@@ -91,9 +93,9 @@ func (w *workspace) askAI(provider, prompt string) {
 		cmd.Stdout = &output
 		cmd.Stderr = &diagnostics
 		err = cmd.Run()
-		result := clean(output.String())
+		result := textutil.Clean(output.String())
 		if err != nil {
-			result += "\nProvider failed: " + err.Error() + "\n" + clean(diagnostics.String())
+			result += "\nProvider failed: " + err.Error() + "\n" + textutil.Clean(diagnostics.String())
 		}
 		if result == "" {
 			result = "Provider returned no text."

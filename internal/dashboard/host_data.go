@@ -14,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/textutil"
 )
 
 type hostProcess struct {
@@ -29,25 +32,6 @@ type hostProcess struct {
 	// /proc/PID/stat on Linux; -1 where that is not read (macOS, vanished
 	// PIDs). It says where the process ran, not where it is allowed to.
 	LastCPU int
-}
-
-// joinNote concatenates the non-empty diagnostics with the status separator.
-func joinNote(parts ...string) string {
-	var kept []string
-	for _, part := range parts {
-		if strings.TrimSpace(part) != "" {
-			kept = append(kept, strings.TrimSpace(part))
-		}
-	}
-	return strings.Join(kept, " · ")
-}
-
-// skippedNote describes tolerated parser rows; "" when nothing was skipped.
-func skippedNote(skipped int, what string) string {
-	if skipped <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("%d unrecognised %s skipped", skipped, what)
 }
 
 // allRowsFailed is the tolerant parsers' shared failure rule: a snapshot is
@@ -72,13 +56,6 @@ func leadingFields(line string, count int) ([]string, string) {
 		line = line[i:]
 	}
 	return fields, strings.TrimLeft(line, " \t")
-}
-
-// parseProcesses keeps the historical signature: it fails only when the
-// snapshot had rows and none of them parsed.
-func parseProcesses(raw string) ([]hostProcess, error) {
-	rows, _, err := parseProcessesTolerant(raw)
-	return rows, err
 }
 
 // parseProcessesTolerant skips rows it cannot read (a truncated line, a
@@ -110,13 +87,13 @@ func parseProcessesTolerant(raw string) (rows []hostProcess, skipped int, err er
 			continue
 		}
 		seen[pid] = true
-		rows = append(rows, hostProcess{PID: pid, PPID: ppid, User: f[2], State: f[5], Elapsed: f[6], Command: clean(command), CPU: cpu, RSS: rss, LastCPU: -1})
+		rows = append(rows, hostProcess{PID: pid, PPID: ppid, User: f[2], State: f[5], Elapsed: f[6], Command: textutil.Clean(command), CPU: cpu, RSS: rss, LastCPU: -1})
 	}
 	return rows, skipped, allRowsFailed(len(rows), skipped, "ps rows")
 }
 
 func collectProcesses(ctx context.Context) ([]hostProcess, error) {
-	raw, diagnostic, err := networkCommand(ctx, "ps", "-axww", "-o", "pid=,ppid=,user=,pcpu=,rss=,stat=,etime=,args=")
+	raw, diagnostic, err := commandcapture.Capture(ctx, "ps", "-axww", "-o", "pid=,ppid=,user=,pcpu=,rss=,stat=,etime=,args=")
 	if err != nil {
 		return nil, fmt.Errorf("ps: %w %s", err, diagnostic)
 	}
@@ -295,13 +272,6 @@ func dfNumber(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSuffix(s, "%"), 10, 64)
 }
 
-// parseMounts keeps the historical signature: a missing header, or a table
-// whose every row is unreadable, is an error; a single odd row is skipped.
-func parseMounts(raw, platform string, inodeOnly bool) ([]hostMount, error) {
-	rows, _, err := parseMountsTolerant(raw, platform, inodeOnly)
-	return rows, err
-}
-
 // parseMountsTolerant reads POSIX df output and skips rows it cannot read.
 func parseMountsTolerant(raw, platform string, inodeOnly bool) (rows []hostMount, skipped int, err error) {
 	lines := strings.Split(strings.TrimSpace(raw), "\n")
@@ -335,7 +305,7 @@ func parseDFRow(line, platform string, inodeOnly bool) (hostMount, bool) {
 		}
 		values[i] = v
 	}
-	m := hostMount{Source: clean(f[1]), Path: clean(f[6]), Size: values[0], Used: values[1], Free: values[2], Percent: int(values[3]), InodePercent: -1, Inodes: -1, InodeUsed: -1, InodeFree: -1}
+	m := hostMount{Source: textutil.Clean(f[1]), Path: textutil.Clean(f[6]), Size: values[0], Used: values[1], Free: values[2], Percent: int(values[3]), InodePercent: -1, Inodes: -1, InodeUsed: -1, InodeFree: -1}
 	if inodeOnly {
 		m.Inodes, m.InodeUsed, m.InodeFree, m.InodePercent = m.Size, m.Used, m.Free, m.Percent
 	} else if platform == "darwin" {
@@ -350,7 +320,7 @@ func parseDFRow(line, platform string, inodeOnly bool) (hostMount, bool) {
 			}
 			values[i] = v
 		}
-		m.InodeUsed, m.InodeFree, m.InodePercent, m.Path = values[0], values[1], int(values[2]), clean(path)
+		m.InodeUsed, m.InodeFree, m.InodePercent, m.Path = values[0], values[1], int(values[2]), textutil.Clean(path)
 		if values[0] >= 0 && values[1] >= 0 && values[0] <= math.MaxInt64-values[1] {
 			m.Inodes = values[0] + values[1]
 		}
@@ -446,7 +416,7 @@ func dfPercent(used, avail int64) int {
 // mount converts a statfs reading into the KiB-based row df would print.
 func (u mountUsage) mount(entry mountEntry) hostMount {
 	kib := func(blocks uint64) int64 { return int64(blocks * u.BlockSize / 1024) }
-	m := hostMount{Source: clean(entry.Source), Path: clean(entry.Path), Size: kib(u.Blocks), Used: kib(u.Blocks - min(u.Blocks, u.Bfree)), Free: kib(u.Bavail)}
+	m := hostMount{Source: textutil.Clean(entry.Source), Path: textutil.Clean(entry.Path), Size: kib(u.Blocks), Used: kib(u.Blocks - min(u.Blocks, u.Bfree)), Free: kib(u.Bavail)}
 	m.Percent = dfPercent(m.Used, m.Free)
 	m.Inodes, m.InodeFree, m.InodeUsed = int64(u.Files), int64(u.Ffree), int64(u.Files-min(u.Files, u.Ffree))
 	m.InodePercent = -1
@@ -520,7 +490,7 @@ func statMounts(ctx context.Context, entries []mountEntry, timeout time.Duration
 	if len(unreadable) > 0 {
 		notes = append(notes, "unreadable: "+strings.Join(unreadable, ", "))
 	}
-	return rows, joinNote(notes...)
+	return rows, textutil.JoinNote(notes...)
 }
 
 // mountStatTimeout bounds how long one poll waits for any single mount.
@@ -546,22 +516,22 @@ func collectMounts(ctx context.Context, platform string) ([]hostMount, string, e
 	if platform == "darwin" {
 		args = []string{"-Pki"}
 	}
-	raw, diagnostic, err := networkCommand(ctx, "df", args...)
+	raw, diagnostic, err := commandcapture.Capture(ctx, "df", args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("df: %w %s", err, diagnostic)
 	}
 	rows, skipped, err := parseMountsTolerant(raw, platform, false)
-	note := joinNote(diagnostic, skippedNote(skipped, "df rows"))
+	note := textutil.JoinNote(diagnostic, textutil.SkippedNote(skipped, "df rows"))
 	if err != nil || platform == "darwin" {
 		return rows, note, err
 	}
-	raw, inodeNote, inodeErr := networkCommand(ctx, "df", "-Pi")
+	raw, inodeNote, inodeErr := commandcapture.Capture(ctx, "df", "-Pi")
 	if inodeErr != nil {
-		return rows, joinNote(note, "Inodes unavailable: "+inodeErr.Error()+" "+inodeNote), nil
+		return rows, textutil.JoinNote(note, "Inodes unavailable: "+inodeErr.Error()+" "+inodeNote), nil
 	}
 	inodes, inodeSkipped, inodeErr := parseMountsTolerant(raw, platform, true)
 	if inodeErr != nil {
-		return rows, joinNote(note, inodeErr.Error()), nil
+		return rows, textutil.JoinNote(note, inodeErr.Error()), nil
 	}
 	index := map[string]hostMount{}
 	for _, m := range inodes {
@@ -572,7 +542,7 @@ func collectMounts(ctx context.Context, platform string) ([]hostMount, string, e
 			rows[i].Inodes, rows[i].InodeUsed, rows[i].InodeFree, rows[i].InodePercent = v.Inodes, v.InodeUsed, v.InodeFree, v.InodePercent
 		}
 	}
-	return rows, joinNote(note, skippedNote(inodeSkipped, "df -i rows")), nil
+	return rows, textutil.JoinNote(note, textutil.SkippedNote(inodeSkipped, "df -i rows")), nil
 }
 
 type deletedFile struct {
@@ -582,13 +552,6 @@ type deletedFile struct {
 }
 
 func (f deletedFile) key() string { return fmt.Sprintf("%d/%s/%s/%s", f.PID, f.FD, f.Device, f.Inode) }
-
-// parseDeletedFiles keeps the historical signature: output that is not lsof
-// field format, or whose every record is unreadable, is an error.
-func parseDeletedFiles(raw string) ([]deletedFile, error) {
-	rows, _, err := parseDeletedFilesTolerant(raw)
-	return rows, err
-}
 
 // parseDeletedFilesTolerant skips a process record with a bad PID (and the
 // files under it), a file record with no owner, and a file with an unreadable
@@ -631,9 +594,9 @@ func parseDeletedFilesTolerant(raw string) (rows []deletedFile, skipped int, err
 			file = deletedFile{Size: -1}
 			kind = ""
 		case 'c':
-			owner.Process = clean(v)
+			owner.Process = textutil.Clean(v)
 		case 'u':
-			owner.User = clean(v)
+			owner.User = textutil.Clean(v)
 		case 'f':
 			flush()
 			file = deletedFile{Size: -1}
@@ -655,7 +618,7 @@ func parseDeletedFilesTolerant(raw string) (rows []deletedFile, skipped int, err
 		case 'i':
 			file.Inode = v
 		case 'n':
-			file.Path = clean(v)
+			file.Path = textutil.Clean(v)
 		case 's':
 			size, err := strconv.ParseInt(v, 10, 64)
 			if err != nil || size < 0 {
@@ -670,7 +633,7 @@ func parseDeletedFilesTolerant(raw string) (rows []deletedFile, skipped int, err
 }
 
 func collectDeletedFiles(ctx context.Context) ([]deletedFile, string, error) {
-	raw, note, err := networkCommand(ctx, "lsof", "-nP", "+L1", "-F0pcuftDins")
+	raw, note, err := commandcapture.Capture(ctx, "lsof", "-nP", "+L1", "-F0pcuftDins")
 	var exit *exec.ExitError
 	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
 		return nil, "", fmt.Errorf("lsof: %w %s", err, note)
@@ -682,7 +645,7 @@ func collectDeletedFiles(ctx context.Context) ([]deletedFile, string, error) {
 	if err != nil && raw != "" {
 		note = "Partial lsof result. " + note
 	}
-	return rows, joinNote(note, skippedNote(skipped, "lsof records")), parseErr
+	return rows, textutil.JoinNote(note, textutil.SkippedNote(skipped, "lsof records")), parseErr
 }
 
 func hostBytes(value int64, kib bool) string {

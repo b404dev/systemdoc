@@ -27,6 +27,21 @@ A Linux and macOS terminal workspace with two modes: native services (systemd on
 
 Versions are pinned in [go.mod](go.mod). Release binaries use `CGO_ENABLED=0` for Linux amd64/arm64 and macOS arm64.
 
+### Package boundaries
+
+`internal/dashboard` owns terminal widgets, navigation, refresh scheduling and
+action review. It calls `internal/hostnet` for network collection, parsing,
+filtering and rate calculation, and `internal/dockerinspect` for readable
+container inspection output. These packages own their component tests and
+have no dependency on dashboard state, tview or tcell. Dashboard tests cover
+their integration with the UI.
+
+`internal/commandcapture` supplies bounded structured CLI output with separate
+stderr, cancellation and timeouts; host collectors share it. `internal/textutil`
+owns external-output sanitization and plain-text helpers. Dependencies point
+from the UI toward these packages, never back toward the UI. Other service,
+host and Kubernetes backends still reside in `dashboard`.
+
 ## Data flow and responsiveness
 
 Systemd and container inventory jobs start independently. Within the container job, Docker and Kubernetes are listed concurrently and either alone is sufficient; a failed kubectl probe backs off (30 s doubling to 10 min) so a host with kubectl but no cluster is not asked on every refresh, and a stack that stops answering is dropped and re-probed. Identity/state inventory is published before slower resource enrichment. Each backend has one in-flight job; cached inventory makes mode switches immediate while stale data refreshes in the background. Changed scopes discard obsolete results.

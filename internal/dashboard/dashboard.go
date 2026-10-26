@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 var tabNames = []string{"Overview", "Logs", "Config", "Metrics", "Dependencies"}
@@ -647,7 +649,7 @@ func (w *workspace) updateDashboard() {
 		if note := w.inventoryNote[w.mode]; note != "" {
 			// A failed accounting call is said out loud; blank resource
 			// columns must never look like an idle machine.
-			line += " · " + ellipsize("accounting unavailable · "+clean(note), max(20, w.lastWidth-displayWidth(line)-3))
+			line += " · " + ellipsize("accounting unavailable · "+textutil.Clean(note), max(20, w.lastWidth-displayWidth(line)-3))
 		}
 		w.summary.SetText(line)
 	}
@@ -686,7 +688,7 @@ func (w *workspace) updateSelectionCard() {
 			}
 		}
 	}
-	w.selectionCard.SetTitle(" " + tview.Escape(clean(item.Name)) + " ").SetTitleColor(tcell.GetColor(p.accent))
+	w.selectionCard.SetTitle(" " + tview.Escape(textutil.Clean(item.Name)) + " ").SetTitleColor(tcell.GetColor(p.accent))
 	state := item.State
 	if w.mode == 0 && !item.UnitFileOnly && item.Detail != "" {
 		state += " / " + item.Detail
@@ -709,7 +711,7 @@ func (w *workspace) updateSelectionCard() {
 	if cpuShare, ok := cpuValue(item.CPU); ok {
 		cpuHue = pressureHue(p, int(cpuShare))
 	}
-	w.selectionCard.SetText(fmt.Sprintf(" [%s::b]%s %s[-::-]  [%s]%s[-]  [%s]CPU[-] [%s::b]%s[-::-]  [%s]MEM[-] %s\n [%s]%s[-]", stateColour(item, p), stateSymbol(item, w.settings.NerdIcons), tview.Escape(clean(state)), p.muted, tview.Escape(clean(context)), p.muted, cpuHue, tview.Escape(available(item.CPU)), p.muted, tview.Escape(available(item.Memory)), p.muted, tview.Escape(trend)))
+	w.selectionCard.SetText(fmt.Sprintf(" [%s::b]%s %s[-::-]  [%s]%s[-]  [%s]CPU[-] [%s::b]%s[-::-]  [%s]MEM[-] %s\n [%s]%s[-]", stateColour(item, p), stateSymbol(item, w.settings.NerdIcons), tview.Escape(textutil.Clean(state)), p.muted, tview.Escape(textutil.Clean(context)), p.muted, cpuHue, tview.Escape(available(item.CPU)), p.muted, tview.Escape(available(item.Memory)), p.muted, tview.Escape(trend)))
 }
 
 // selectionChartWidth is how many samples fit on the identity band's trend

@@ -12,6 +12,9 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/commandcapture"
+	"systemdoc/internal/textutil"
 )
 
 var hostTabNames = []string{"SERVICES", "CONTAINERS", "NETWORK", "PROCESSES", "STORAGE"}
@@ -575,7 +578,7 @@ func (h *hostPage) render() {
 			if col == 0 {
 				value = " " + value
 			}
-			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(p.text)).SetMaxWidth(16)
+			cell := tview.NewTableCell(tview.Escape(textutil.Clean(value))).SetTextColor(tcell.GetColor(p.text)).SetMaxWidth(16)
 			if numericColumn[headers[col]] {
 				cell.SetAlign(tview.AlignRight)
 			}
@@ -655,7 +658,7 @@ func (h *hostPage) inspectRecord() {
 func (w *workspace) hostText(title, body string) {
 	focus := w.app.GetFocus()
 	p := w.palette()
-	v := textView().SetWrap(true).SetScrollable(true).SetText(clean(body)).SetTextColor(tcell.GetColor(p.text))
+	v := textView().SetWrap(true).SetScrollable(true).SetText(textutil.Clean(body)).SetTextColor(tcell.GetColor(p.text))
 	v.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetTitle(" " + title + " · Esc returns ").SetTitleColor(tcell.GetColor(p.accent))
 	v.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		if e.Key() == tcell.KeyEscape {
@@ -792,15 +795,15 @@ func verifyAndSignalProcess(ctx context.Context, process hostProcess, signal sys
 	if err := processTargetError(process); err != nil {
 		return err
 	}
-	raw, diagnostic, err := networkCommand(ctx, "ps", "-ww", "-p", strconv.Itoa(process.PID), "-o", "args=")
+	raw, diagnostic, err := commandcapture.Capture(ctx, "ps", "-ww", "-p", strconv.Itoa(process.PID), "-o", "args=")
 	if err != nil {
 		return fmt.Errorf("could not revalidate PID %d: %w %s", process.PID, err, diagnostic)
 	}
-	observed := strings.TrimSpace(clean(raw))
+	observed := strings.TrimSpace(textutil.Clean(raw))
 	if observed == "" {
 		return fmt.Errorf("PID %d exited before the signal was sent", process.PID)
 	}
-	if observed != strings.TrimSpace(clean(process.Command)) {
+	if observed != strings.TrimSpace(textutil.Clean(process.Command)) {
 		return fmt.Errorf("PID %d changed identity; expected %q, now %q", process.PID, process.Command, observed)
 	}
 	target, err := os.FindProcess(process.PID)
@@ -885,7 +888,7 @@ func (h *hostPage) updateStatus() {
 	// One line: the counts first, then the caveat, cut with an ellipsis rather
 	// than wrapped, so every host page spends the same two rows on its footer.
 	lead := fmt.Sprintf(" %d rows · %s · poll %ds · ", len(h.rows), state, h.pollSeconds())
-	note = ellipsize(clean(strings.ReplaceAll(note, "\n", " · ")), max(0, h.width-displayWidth(lead)-1))
+	note = ellipsize(textutil.Clean(strings.ReplaceAll(note, "\n", " · ")), max(0, h.width-displayWidth(lead)-1))
 	h.status.SetText(fmt.Sprintf("%s[%s]%s[-]", tview.Escape(lead), colour, tview.Escape(note)))
 }
 
@@ -900,7 +903,7 @@ func (h *hostPage) report() string {
 	for _, r := range h.rows {
 		out.WriteString(r.detail + "\n\n")
 	}
-	return clean(out.String())
+	return textutil.Clean(out.String())
 }
 
 func (h *hostPage) processRows() ([]string, [3]hostCard) {
@@ -1067,9 +1070,9 @@ func processRich(pal palette, glyphs, hue string, p hostProcess, parent string, 
 		memoryGauge = gaugeLine("MEMORY", float64(p.RSS), float64(memoryCeiling), 20, hueOf(pal, hue), pal, glyphs, hostBytes(p.RSS, true), "RSS · largest observed process sets the scale")
 	}
 	return fmt.Sprintf("[%s::b]%s[-::-]\n%s\n%s\n[%s]PID[-] [%s::b]%d[-::-]  [%s]%s[-]  [%s::b] %s [-::-]  [%s]elapsed %s · parent %d %s[-]",
-		hue, tview.Escape(clean(p.Command)), cpuGauge, memoryGauge,
-		pal.muted, hue, p.PID, pal.muted, tview.Escape(clean(p.User)), stateHue, tview.Escape(clean(stateText)),
-		pal.muted, tview.Escape(clean(p.Elapsed)), p.PPID, tview.Escape(clean(available(parent))))
+		hue, tview.Escape(textutil.Clean(p.Command)), cpuGauge, memoryGauge,
+		pal.muted, hue, p.PID, pal.muted, tview.Escape(textutil.Clean(p.User)), stateHue, tview.Escape(textutil.Clean(stateText)),
+		pal.muted, tview.Escape(textutil.Clean(p.Elapsed)), p.PPID, tview.Escape(textutil.Clean(available(parent))))
 }
 
 func (h *hostPage) mountRows() ([]string, [3]hostCard) {
@@ -1133,7 +1136,7 @@ func mountRich(p palette, mode, hue string, m hostMount, free, spaceHue string) 
 			fmt.Sprintf("%s used / %s total · %s free", hostCount(m.InodeUsed), hostCount(m.Inodes), hostCount(m.InodeFree)))
 	}
 	return fmt.Sprintf("[%s::b]%s[-::-]  [%s]%s[-]\n%s\n%s\n[%s]Shared pools, bind mounts and reserved blocks affect accounting.[-]",
-		hue, tview.Escape(clean(m.Path)), p.muted, tview.Escape(clean(m.Source)),
+		hue, tview.Escape(textutil.Clean(m.Path)), p.muted, tview.Escape(textutil.Clean(m.Source)),
 		gaugeLine("SPACE", float64(m.Percent), 100, 26, hueOf(p, spaceHue), p, mode, fmt.Sprintf("%d%%", m.Percent),
 			fmt.Sprintf("%s used · %s free · %s total", hostBytes(m.Used, true), tview.Escape(free), hostBytes(m.Size, true))),
 		inodeGauge, p.muted)

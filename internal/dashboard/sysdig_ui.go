@@ -11,6 +11,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 // sysdigPalette lists the probes for one target. Every probe is reviewed with
@@ -140,7 +142,7 @@ func (w *workspace) streamPanel(title, commandLine, name string, build func(cont
 	view := textView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	view.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetBorderColor(tcell.GetColor(panelHue(p, 3))).SetBorderAttributes(tcell.AttrBold)
 	view.SetTitleColor(tcell.GetColor(panelHue(p, 3)))
-	view.SetText(fmt.Sprintf("[%s]%s\n\nStarting…[-]", p.muted, tview.Escape(clean(commandLine))))
+	view.SetText(fmt.Sprintf("[%s]%s\n\nStarting…[-]", p.muted, tview.Escape(textutil.Clean(commandLine))))
 	var snapshot logSnapshot
 	paused, lines := false, 0
 	setTitle := func() {
@@ -151,7 +153,7 @@ func (w *workspace) streamPanel(title, commandLine, name string, build func(cont
 		if snapshot.ending != "" {
 			state = "ENDED"
 		}
-		view.SetTitle(fmt.Sprintf(" %s · %s · %d lines · Space pause · e export · Esc stops ", tview.Escape(clean(title)), state, lines))
+		view.SetTitle(fmt.Sprintf(" %s · %s · %d lines · Space pause · e export · Esc stops ", tview.Escape(textutil.Clean(title)), state, lines))
 	}
 	render := func() {
 		if paused {
@@ -177,7 +179,7 @@ func (w *workspace) streamPanel(title, commandLine, name string, build func(cont
 			paused = false
 			render()
 		case e.Rune() == 'e':
-			w.reviewSnapshot(commandLine + "\n\n" + clean(snapshot.text) + snapshot.ending)
+			w.reviewSnapshot(commandLine + "\n\n" + textutil.Clean(snapshot.text) + snapshot.ending)
 		case e.Key() == tcell.KeyUp || e.Key() == tcell.KeyPgUp || e.Rune() == 'k':
 			paused = true
 			setTitle()
@@ -273,7 +275,7 @@ func (w *workspace) runSysdigCollection(runner sysdigRunner, probe sysdigProbe, 
 			cancel()
 			w.pages.RemovePage("sysdig-loading")
 			header := fmt.Sprintf("%s\n%s · collected %d s from %s\n\n", runner.display(args), target.label, probe.seconds, started.Format("15:04:05"))
-			body := strings.TrimSpace(clean(output))
+			body := strings.TrimSpace(textutil.Clean(output))
 			if err != nil {
 				body = "Collection failed: " + err.Error() + "\n\n" + body
 			} else if body == "" {
@@ -294,7 +296,7 @@ func (w *workspace) traceResult(title, body string) {
 	view := textView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	view.SetText(richOutput(body, 0, p))
 	view.SetBackgroundColor(tcell.GetColor(p.surface)).SetBorder(true).SetBorderColor(tcell.GetColor(panelHue(p, 3))).SetBorderAttributes(tcell.AttrBold)
-	view.SetTitle(" " + tview.Escape(clean(title)) + " · e export · Esc returns ").SetTitleColor(tcell.GetColor(panelHue(p, 3)))
+	view.SetTitle(" " + tview.Escape(textutil.Clean(title)) + " · e export · Esc returns ").SetTitleColor(tcell.GetColor(panelHue(p, 3)))
 	close := func() { w.pages.RemovePage("trace-result"); w.app.SetFocus(focus) }
 	view.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		switch {

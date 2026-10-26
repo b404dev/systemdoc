@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"systemdoc/internal/textutil"
 )
 
 // sysdig looks at what a binary actually does at runtime: every syscall, file,
@@ -336,17 +338,11 @@ func collectSysdig(ctx context.Context, runner sysdigRunner, probe sysdigProbe, 
 func lastFrame(text string) string {
 	frames := strings.Split(text, "\x1b[2J")
 	for i := len(frames) - 1; i >= 0; i-- {
-		if strings.TrimSpace(clean(frames[i])) != "" {
+		if strings.TrimSpace(textutil.Clean(frames[i])) != "" {
 			return frames[i]
 		}
 	}
 	return text
-}
-
-// streamSysdig runs a live probe and publishes the bounded buffer every 400 ms
-// until the context is cancelled or sysdig exits.
-func streamSysdig(ctx context.Context, runner sysdigRunner, args []string, update func(text, ending string)) {
-	streamCommand(ctx, sysdigCommand(ctx, runner, args), "sysdig", update)
 }
 
 // streamCommand runs any long-lived command and publishes its bounded output

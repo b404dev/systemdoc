@@ -12,6 +12,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 type workspace struct {
@@ -317,7 +319,7 @@ func (w *workspace) updateHeader() {
 }
 
 func dashboardHeader(p palette, icon, host, contextLabel string) string {
-	return fmt.Sprintf(" [%s::b]%s[-::-] %s  [%s]// SYSTEM OBSERVATORY[-]   [%s]%s / %s[-]", p.accent, icon, brandWordmark(p), p.muted, p.text, tview.Escape(clean(host)), tview.Escape(clean(contextLabel)))
+	return fmt.Sprintf(" [%s::b]%s[-::-] %s  [%s]// SYSTEM OBSERVATORY[-]   [%s]%s / %s[-]", p.accent, icon, brandWordmark(p), p.muted, p.text, tview.Escape(textutil.Clean(host)), tview.Escape(textutil.Clean(contextLabel)))
 }
 
 // mastheadHeight is one rule for every page: two lines and a gradient rule
@@ -357,18 +359,6 @@ func (w *workspace) signalsHint(p palette) string {
 // to the splash, where it costs no working rows.
 func brandWordmark(p palette) string {
 	return "[::b]" + gradientText("SYSTEMDOC", p.accent, p.glow) + "[::-]"
-}
-
-// Host utilisation sits beside the workload counts in the masthead so the
-// machine's own load is visible without opening a panel. Missing readings stay
-// missing rather than rendering as zero.
-// hostReadoutFor omits the readout when the masthead has no room for it, so a
-// narrow terminal shows a complete identity row rather than a clipped one.
-func hostReadoutFor(p palette, usage hostUtilisation, width int) string {
-	if width > 0 && width < 100 {
-		return ""
-	}
-	return "   " + hostReadout(p, usage, width)
 }
 
 // hostReadout is the one-line host figure set. From 120 columns the CPU
@@ -508,7 +498,7 @@ func (w *workspace) renderTable() {
 					colour = pressureHue(p, int(cpuShare))
 				}
 			}
-			cell := tview.NewTableCell(tview.Escape(clean(value))).SetTextColor(tcell.GetColor(colour))
+			cell := tview.NewTableCell(tview.Escape(textutil.Clean(value))).SetTextColor(tcell.GetColor(colour))
 			if col == 2 || col == 3 {
 				// Figures read as a column when their units line up.
 				cell.SetAlign(tview.AlignRight)
@@ -662,16 +652,6 @@ func (w *workspace) showDetail() {
 			}
 		})
 	}()
-}
-
-func clean(value string) string {
-	value = ansiSequence.ReplaceAllString(value, "")
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' || r >= 32 && r != 127 && !(r >= 128 && r <= 159) {
-			return r
-		}
-		return -1
-	}, value)
 }
 
 func (w *workspace) input(event *tcell.EventKey) *tcell.EventKey {

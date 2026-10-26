@@ -7,6 +7,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 func shortWorkload(value string) string {
@@ -97,7 +99,7 @@ func (w *workspace) updateStoryline() {
 		if strings.Contains(event.text, "failed") || strings.Contains(event.text, "unhealthy") || strings.Contains(event.text, "no longer") {
 			colour = p.error
 		}
-		parts = append(parts, fmt.Sprintf("[%s]%s[-] [%s::b]%s[-::-] %s", p.muted, event.at.Format("15:04"), colour, tview.Escape(shortWorkload(event.id)), tview.Escape(clean(event.text))))
+		parts = append(parts, fmt.Sprintf("[%s]%s[-] [%s::b]%s[-::-] %s", p.muted, event.at.Format("15:04"), colour, tview.Escape(shortWorkload(event.id)), tview.Escape(textutil.Clean(event.text))))
 	}
 	if len(parts) == 0 {
 		w.storyline.SetText(fmt.Sprintf(" [%s::b]%s STORYLINE[-::-]  [%s]quiet · changes observed during this session will appear here · click or I opens history[-]", p.accent, w.icon(iconStoryline), p.muted))
@@ -140,7 +142,7 @@ func (w *workspace) storylineView() {
 		if strings.Contains(event.text, "failed") || strings.Contains(event.text, "unhealthy") || strings.Contains(event.text, "no longer") {
 			colour = p.error
 		}
-		fmt.Fprintf(&content, "[%s]%s[-]  [%s::b]◆ %-24s[-::-]  %s\n", p.muted, event.at.Format("15:04:05"), colour, tview.Escape(shortWorkload(event.id)), tview.Escape(clean(event.text)))
+		fmt.Fprintf(&content, "[%s]%s[-]  [%s::b]◆ %-24s[-::-]  %s\n", p.muted, event.at.Format("15:04:05"), colour, tview.Escape(shortWorkload(event.id)), tview.Escape(textutil.Clean(event.text)))
 		count++
 	}
 	if count == 0 {

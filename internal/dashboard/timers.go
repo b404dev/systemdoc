@@ -10,6 +10,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/textutil"
 )
 
 type systemTimer struct {
@@ -140,7 +142,7 @@ func (w *workspace) timers() {
 				}
 				for i, v := range rows {
 					for col, value := range []string{v.Unit, timerTime(v.Next), timerTime(v.Last), v.Activates} {
-						table.SetCell(i+1, col, tview.NewTableCell(tview.Escape(clean(value))).SetExpansion(1).SetMaxWidth(48))
+						table.SetCell(i+1, col, tview.NewTableCell(tview.Escape(textutil.Clean(value))).SetExpansion(1).SetMaxWidth(48))
 					}
 				}
 				if len(rows) == 0 {
@@ -181,7 +183,7 @@ func (w *workspace) timerRead(user bool, id string, tab int) {
 	}
 	ctx, cancel := context.WithCancel(w.ctx)
 	view := textView().SetScrollable(true).SetWrap(true).SetText("Loading…")
-	view.SetBorder(true).SetTitle(" " + tview.Escape(clean(id)) + " · Escape returns ")
+	view.SetBorder(true).SetTitle(" " + tview.Escape(textutil.Clean(id)) + " · Escape returns ")
 	view.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		if e.Key() == tcell.KeyEscape {
 			cancel()
@@ -202,7 +204,7 @@ func (w *workspace) timerRead(user bool, id string, tab int) {
 		}
 		w.queue(func() {
 			if ctx.Err() == nil {
-				view.SetText(clean(raw))
+				view.SetText(textutil.Clean(raw))
 			}
 		})
 	}()
