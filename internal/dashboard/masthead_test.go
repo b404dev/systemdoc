@@ -34,6 +34,9 @@ func TestMastheadIsUniformAcrossPages(t *testing.T) {
 		w.networkPage()
 		capture("network")
 		w.pages.RemovePage("network")
+		w.metricsPage()
+		capture("metrics")
+		w.pages.RemovePage("metrics")
 		for _, tab := range []int{3, 4} {
 			w.hostPage(tab)
 			_, page := w.pages.GetFrontPage()

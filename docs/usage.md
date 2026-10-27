@@ -6,9 +6,9 @@
 
 *Captured from the real binary against the k0s playground: the masthead names the stack, the Attention filter isolates the failing pods, and the overview shows the crash loop, the last exit and the newest events.*
 
-## The five feature suites
+## The six feature suites
 
-Systemdoc is organised around five live operational suites. Press `0` from any suite to open the searchable **Control Deck**, which describes all five and routes directly to one. Press `1`–`5` for immediate switching.
+Systemdoc is organised around six live operational suites. Press `0` from any suite to open the searchable **Control Deck**, which describes all six and routes directly to one. Press `1`–`6` for immediate switching.
 
 | Suite | Purpose | Use it when you need to… |
 | --- | --- | --- |
@@ -17,6 +17,7 @@ Systemdoc is organised around five live operational suites. Press `0` from any s
 | **3 · Network** | Host ports, flows, interfaces and speed | Identify a listener or connection owner, filter by port/PID/process/protocol/state, inspect interfaces, watch download/upload throughput, or jump to process detail. |
 | **4 · Processes** | Host resource, ownership and signal explorer | Rank CPU/RSS, inspect parent/child trees and full commands, find zombies, review a process signal, or pivot from a PID to its service and ports. |
 | **5 · Storage** | Filesystem capacity and reclaim investigation | Find full mounts or inode pressure, sort/filter storage, and identify deleted files that are still held open. |
+| **6 · Metrics** | Prometheus trends, targets and setup | Watch node_exporter, cAdvisor or Proxmox VE panels from your Prometheus server, pin any metric, check scrape targets and server health, or install Prometheus and exporters through reviewed commands. See [the Metrics suite](prometheus.md). |
 
 Each suite uses the same polling preference, numbered navigation rail, Deep theme, filter conventions, focus styling and reviewed export model. Observations stay tied to their actual collector; the application does not pretend separately sampled host data is one atomic snapshot.
 
@@ -74,11 +75,12 @@ Press `z` to expand the focused pane. An expanded workload list reveals boot/sub
 ## Keyboard controls
 | Key | Action |
 | --- | --- |
-| 0 | Open the Control Deck and descriptions of all five suites |
+| 0 | Open the Control Deck and descriptions of all six suites |
 | 1 / 2 | Systemd / Docker |
 | 3 | Ports and networking |
 | 4 | [Process Explorer](host-panels.md) |
 | 5 | [Disk & Storage](host-panels.md) |
+| 6 | [Metrics suite](prometheus.md): a pins a metric, d unpins, i chooses the host, b toggles bar glyphs, t targets, s setup |
 | F9 / K / Delete | Open reviewed signal actions for the selected process in Process Explorer |
 | / | Inventory filter |
 | , | Change live polling interval |

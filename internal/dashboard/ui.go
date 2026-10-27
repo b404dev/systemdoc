@@ -100,6 +100,7 @@ type workspace struct {
 	commandHistory  []string
 	workloadHistory map[string][]workloadSignal
 	hostLabel       string
+	promSelected    promEndpoint // Prometheus chosen with "Open in Metrics"; wins over settings
 }
 
 type Options struct {
@@ -108,6 +109,7 @@ type Options struct {
 	Filter     string
 	ActiveOnly bool
 	Kubectl    string
+	Prometheus string
 }
 
 func Run(options Options) error {
@@ -121,6 +123,9 @@ func Run(options Options) error {
 	}
 	if strings.TrimSpace(options.Kubectl) != "" {
 		os.Setenv("SYSTEMDOC_KUBECTL", strings.TrimSpace(options.Kubectl))
+	}
+	if strings.TrimSpace(options.Prometheus) != "" {
+		os.Setenv("SYSTEMDOC_PROMETHEUS", strings.TrimSpace(options.Prometheus))
 	}
 	w := newWorkspace(ctx, options.User)
 	if options.Docker {
@@ -747,8 +752,8 @@ func (w *workspace) input(event *tcell.EventKey) *tcell.EventKey {
 		}
 	case '3':
 		w.networkPage()
-	case '4', '5':
-		w.hostPage(int(event.Rune() - '1'))
+	case '4', '5', '6':
+		w.openHostTab(int(event.Rune() - '1'))
 	case '1', '2':
 		w.switchMode(int(event.Rune() - '1'))
 	case 'z':
@@ -836,7 +841,7 @@ func (w *workspace) input(event *tcell.EventKey) *tcell.EventKey {
 	case 'a':
 		w.actions()
 	case '?':
-		w.message("Welcome to Systemdoc", "Five areas. One workspace.\n\n0 opens the Control Deck · 1 / 2 services and containers · 3 network · 4 processes · 5 storage\n/ filters names, states and projects · Enter inspects · Tab switches panes\nx maps the selected workload constellation · I opens the incident storyline · C opens CPU cores · G cycles block/braille/ASCII graphics\nl logs · h retained log history · L live log drawer · c configuration · r resources · o overview\nR reviews restart · t previews themes · a searches actions · q quits\nS sort · i active only · A cycle state filter · z expand focused pane · [ / ] resize split · Escape restores\nClick Active / Attention cards to filter; click again to clear\n\nLive data refreshes automatically · , changes the polling interval.\nV saved views · T systemd timers · E troubleshooting snapshot\ns richer log search · p Compose projects · H operation history\nf favorite · F favorites only · u system/user scope\n: supported commands · Actions includes lifecycle and native tools.")
+		w.message("Welcome to Systemdoc", "Six areas. One workspace.\n\n0 opens the Control Deck · 1 / 2 services and containers · 3 network · 4 processes · 5 storage · 6 metrics\n/ filters names, states and projects · Enter inspects · Tab switches panes\nx maps the selected workload constellation · I opens the incident storyline · C opens CPU cores · G cycles block/braille/ASCII graphics\nl logs · h retained log history · L live log drawer · c configuration · r resources · o overview\nR reviews restart · t previews themes · a searches actions · q quits\nS sort · i active only · A cycle state filter · z expand focused pane · [ / ] resize split · Escape restores\nClick Active / Attention cards to filter; click again to clear\n\nLive data refreshes automatically · , changes the polling interval.\nV saved views · T systemd timers · E troubleshooting snapshot\ns richer log search · p Compose projects · H operation history\nf favorite · F favorites only · u system/user scope\n: supported commands · Actions includes lifecycle and native tools.")
 	case 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	case 'k':

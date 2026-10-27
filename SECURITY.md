@@ -12,7 +12,7 @@ Run Systemdoc as a regular user. Native systemd, journal, Docker, and SSH permis
 
 Settings and exports use owner-only permissions. Project definitions contain source paths; those sources, command arguments, labels, inspect JSON, and logs can contain secrets. The Docker overview omits environment values, but it is not a general-purpose redaction layer. Review exports and AI context before sharing.
 
-AI assistance sends the text you review to an external CLI/provider. Authentication belongs to that CLI. SSH uses native host-key and authentication handling; only public keys are installed by key setup. Temporary uploads are private and cleaned up on exit when the connection permits.
+The Metrics suite sends PromQL queries to the configured Prometheus server; a bearer token lives only in `SYSTEMDOC_PROMETHEUS_TOKEN`, is sent as a header, never stored and never printed. Credentials inside the URL are rejected. AI assistance sends the text you review to an external CLI/provider. Authentication belongs to that CLI. SSH uses native host-key and authentication handling; only public keys are installed by key setup. Temporary uploads are private and cleaned up on exit when the connection permits.
 
 ## Downloads
 

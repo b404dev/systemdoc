@@ -9,6 +9,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"systemdoc/internal/promapi"
 )
 
 func (w *workspace) preferences() {
@@ -28,7 +30,8 @@ func (w *workspace) preferences() {
 		AddInputField("Accent override (#RRGGBB)", w.settings.Accent, 12, nil, nil).
 		AddInputField("Background override (#RRGGBB)", w.settings.Background, 12, nil, nil).
 		AddCheckbox("Nerd Font interface (recommended)", w.settings.NerdIcons, nil).
-		AddDropDown("Signal graphics", graphModes, graphModeIndex(w.settings.GraphMode), nil)
+		AddDropDown("Signal graphics", graphModes, graphModeIndex(w.settings.GraphMode), nil).
+		AddInputField("Prometheus URL (blank = detect)", w.settings.PrometheusURL, 44, nil, nil)
 	form.SetBorder(true).SetTitle(" Preferences · saved under XDG config/systemdoc ")
 	form.AddButton("Save", func() {
 		seconds, err := strconv.Atoi(form.GetFormItem(0).(*tview.InputField).GetText())
@@ -61,7 +64,18 @@ func (w *workspace) preferences() {
 		w.settings.WrapLogs = form.GetFormItem(3).(*tview.Checkbox).IsChecked()
 		w.settings.Splash = form.GetFormItem(4).(*tview.Checkbox).IsChecked()
 		w.settings.NerdIcons = form.GetFormItem(7).(*tview.Checkbox).IsChecked()
+		prometheusURL := strings.TrimSpace(form.GetFormItem(9).(*tview.InputField).GetText())
+		if prometheusURL != "" {
+			if _, err := promapi.New(prometheusURL, ""); err != nil {
+				w.message("Invalid Prometheus URL", err.Error())
+				return
+			}
+		}
 		_, w.settings.GraphMode = form.GetFormItem(8).(*tview.DropDown).GetCurrentOption()
+		if prometheusURL != w.settings.PrometheusURL {
+			w.settings.PrometheusURL = prometheusURL
+			resetPrometheus()
+		}
 		w.detail.SetWrap(w.settings.WrapLogs)
 		w.lastWidth = 0
 		w.applyTheme()
@@ -69,7 +83,7 @@ func (w *workspace) preferences() {
 		w.savePreferences()
 		w.app.SetFocus(w.table)
 	}).AddButton("Cancel", func() { w.pages.RemovePage("preferences"); w.app.SetFocus(w.table) })
-	w.pages.AddPage("preferences", centered(form, 88, 29), true, true)
+	w.pages.AddPage("preferences", centered(form, 88, 31), true, true)
 }
 
 func graphModeIndex(value string) int {
@@ -102,11 +116,8 @@ func (w *workspace) updatePollButton() {
 	if w.pages == nil {
 		return
 	}
-	if page, ok := w.pages.GetPage("network").(*networkPage); ok {
-		page.updateStatus()
-	}
-	for _, name := range []string{"processes", "storage"} {
-		if page, ok := w.pages.GetPage(name).(*hostPage); ok {
+	for _, name := range []string{"network", "processes", "storage", "metrics"} {
+		if page, ok := w.pages.GetPage(name).(interface{ updateStatus() }); ok {
 			page.updateStatus()
 		}
 	}
@@ -199,10 +210,10 @@ func (w *workspace) splashBodyText() string {
 		return cached.text
 	}
 	eye := gradientText("───────────  "+w.icon(iconEye)+"  ───────────", p.accent, p.glow)
-	text := fmt.Sprintf("%s\n%s\n\n%s\n[%s]SYSTEM OBSERVATORY[-]\n\n[%s]%s OBSERVE[-]  ·  [%s]%s INSPECT[-]  ·  [%s]%s ACT[-]\n\n[%s::b]01 %s SERVICES[-::-]   [%s::b]02 %s CONTAINERS[-::-]   [%s::b]03 %s NETWORK[-::-]\n[%s::b]04 %s PROCESSES[-::-]  [%s::b]05 %s STORAGE[-::-]\n\n[%s::b]%s[-::-] Connecting to %s and Docker  ·  polling every %ds\n[%s]PRESS ANY KEY TO ENTER[-]",
+	text := fmt.Sprintf("%s\n%s\n\n%s\n[%s]SYSTEM OBSERVATORY[-]\n\n[%s]%s OBSERVE[-]  ·  [%s]%s INSPECT[-]  ·  [%s]%s ACT[-]\n\n[%s::b]01 %s SERVICES[-::-]   [%s::b]02 %s CONTAINERS[-::-]   [%s::b]03 %s NETWORK[-::-]\n[%s::b]04 %s PROCESSES[-::-]  [%s::b]05 %s STORAGE[-::-]  [%s::b]06 %s METRICS[-::-]\n\n[%s::b]%s[-::-] Connecting to %s and Docker  ·  polling every %ds\n[%s]PRESS ANY KEY TO ENTER[-]",
 		wordmarkBlock("SYSTEMDOC", p.accent, p.glow), eye, gradientText("S Y S T E M D O C", p.glow, p.accent), p.muted,
 		p.accent, w.icon(iconEye), p.glow, w.icon(iconSearch), p.warning, w.icon(iconActions),
-		p.success, w.icon(iconServices), p.accent, w.icon(iconContainers), p.glow, w.icon(iconNetwork), p.warning, w.icon(iconProcesses), p.success, w.icon(iconStorage),
+		p.success, w.icon(iconServices), p.accent, w.icon(iconContainers), p.glow, w.icon(iconNetwork), p.warning, w.icon(iconProcesses), p.success, w.icon(iconStorage), p.accent, w.icon(iconMetrics),
 		p.accent, splashSpinnerSlot, tview.Escape(key.manager), key.refresh, p.muted)
 	splashCache.Store(&splashBody{key: key, text: text})
 	return text

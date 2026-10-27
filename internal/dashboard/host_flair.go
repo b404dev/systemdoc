@@ -19,6 +19,8 @@ func panelHue(p palette, tab int) string {
 		return hexColourOf(blend(tcell.GetColor(p.accent), tcell.GetColor(p.glow), 0.55))
 	case 4:
 		return p.glow
+	case 5:
+		return hexColourOf(blend(tcell.GetColor(p.accent), tcell.GetColor(p.glow), 0.3))
 	default:
 		return p.accent
 	}

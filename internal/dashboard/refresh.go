@@ -25,6 +25,7 @@ func (w *workspace) load() {
 	if w.mode == 1 {
 		retryKubeProbe()
 	}
+	retryPrometheusProbe()
 	invalidateUnitFiles()
 	w.startInventory(w.mode)
 }

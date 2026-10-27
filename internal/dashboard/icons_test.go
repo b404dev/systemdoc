@@ -8,7 +8,7 @@ import (
 )
 
 func TestIconVocabularyHasReadableNerdAndFallbackGlyphs(t *testing.T) {
-	for role := iconEye; role <= iconConstellation; role++ {
+	for role := iconEye; role <= iconMetrics; role++ {
 		pair, ok := iconVocabulary[role]
 		if !ok || strings.TrimSpace(pair.nerd) == "" || strings.TrimSpace(pair.fallback) == "" {
 			t.Fatalf("icon role %d is incomplete: %+v", role, pair)
@@ -21,7 +21,7 @@ func TestIconVocabularyHasReadableNerdAndFallbackGlyphs(t *testing.T) {
 
 func TestSuiteLabelsKeepKeysAndNamesInBothIconModes(t *testing.T) {
 	for _, nerd := range []bool{false, true} {
-		buttons := make([]*tview.Button, 5)
+		buttons := make([]*tview.Button, len(hostTabNames))
 		for i := range buttons {
 			buttons[i] = tview.NewButton("")
 		}

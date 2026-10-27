@@ -11,6 +11,7 @@ import (
 
 	"systemdoc/internal/dockerinspect"
 	"systemdoc/internal/hostnet"
+	"systemdoc/internal/promapi"
 )
 
 // This opt-in test exports terminal cells for visual review, without adding any
@@ -118,6 +119,19 @@ func TestVisualReview(t *testing.T) {
 		h.mounts, _ = parseMounts(macDiskFixture, "darwin", false)
 		h.at[0] = time.Now()
 		h.render()
+	}
+	if mode := os.Getenv("SYSTEMDOC_VISUAL_MODE"); mode == "metrics" || mode == "metrics-setup" {
+		w.settings.PrometheusURL = "http://localhost:9090"
+		m := w.metricsPage()
+		m.endpoint = w.prometheusEndpoint()
+		if mode == "metrics" {
+			d := sampleDetection()
+			m.apply(true, "", &d, nil, nil)
+			m.apply(true, "", nil, nil, sampleResults(m.visiblePanels(), 48))
+		} else {
+			m.install = promapi.InstallSteps(promapi.InstallContext{GOOS: "linux", DistroID: "debian", PackageManager: "apt-get", Docker: true})
+			m.apply(false, "connect: connection refused", nil, nil, nil)
+		}
 	}
 	if os.Getenv("SYSTEMDOC_VISUAL_MODE") == "constellation" {
 		body := constellationText(w.current(), 0, "nginx.service\nnetwork-online.target\npostgresql.service\nredis.service\nsystem.slice\n", w.settings.NerdIcons, w.inventoryStates())

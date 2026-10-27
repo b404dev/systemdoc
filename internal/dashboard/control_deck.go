@@ -2,7 +2,7 @@ package dashboard
 
 import "fmt"
 
-// controlDeck makes the five feature suites explicit while routing to the
+// controlDeck makes the six feature suites explicit while routing to the
 // existing live views, so discovery never creates a second source of truth.
 func (w *workspace) controlDeck() {
 	services := fleetTotals(w.items[0])
@@ -33,22 +33,27 @@ func (w *workspace) controlDeck() {
 			"Mount capacity, free space, inode pressure, deleted files held open, filters, sorting and private evidence export",
 			func() { w.navigateToSuite(4) },
 		},
+		{
+			"06  " + w.icon(iconMetrics) + "  METRICS  ·  Prometheus trends",
+			"Built-in panels for node_exporter, cAdvisor and Proxmox VE, pinned metrics, scrape targets and server health, plus guided setup when no Prometheus is reachable",
+			func() { w.navigateToSuite(5) },
+		},
 	}
-	w.choose("control-deck", w.iconLabel(iconEye, "CONTROL DECK · five operational suites"), choices)
+	w.choose("control-deck", w.iconLabel(iconEye, "CONTROL DECK · six operational suites"), choices)
+}
+
+// suitePage is what every non-main suite page offers the navigation code.
+type suitePage interface {
+	suiteIndex() int
+	close()
+	focusPrimary()
 }
 
 func (w *workspace) navigateToSuite(target int) {
 	_, page := w.pages.GetFrontPage()
-	switch current := page.(type) {
-	case *networkPage:
-		if target == 2 {
-			w.app.SetFocus(current.table)
-			return
-		}
-		current.close()
-	case *hostPage:
-		if target == current.tab {
-			w.app.SetFocus(current.table)
+	if current, ok := page.(suitePage); ok {
+		if current.suiteIndex() == target {
+			current.focusPrimary()
 			return
 		}
 		current.close()

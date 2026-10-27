@@ -20,6 +20,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print version")
 	dockerContext := flag.String("docker-context", "", "Pin Docker context for this session")
 	kubectl := flag.String("kubectl", "", "kubectl invocation for the Containers suite (for example \"k0s kubectl\" or \"kubectl --context kind-dev\"); detected when omitted")
+	prometheus := flag.String("prometheus", "", "Prometheus server URL for the Metrics suite (for example http://localhost:9090); detected from local services and containers when omitted. A bearer token is read from SYSTEMDOC_PROMETHEUS_TOKEN")
 	host := flag.String("ssh", "", "Run the suite on an SSH host or user@host")
 	setupKey := flag.Bool("setup-ssh-key", false, "Install a public SSH key with ssh-copy-id before connecting")
 	sshUser := flag.String("ssh-user", "", "SSH login username (default: SSH configuration)")
@@ -61,6 +62,12 @@ func main() {
 		if *kubectl != "" {
 			args = append(args, "--kubectl", *kubectl)
 		}
+		if *prometheus == "" {
+			*prometheus = os.Getenv("SYSTEMDOC_PROMETHEUS")
+		}
+		if *prometheus != "" {
+			args = append(args, "--prometheus", *prometheus)
+		}
 		options := remote.Options{Host: *host, User: *sshUser, Port: *port, Identity: *identity, Binary: *remoteBin, Upload: *upload, UploadBinary: *uploadBinary, Args: args}
 		if *setupKey {
 			if options.Identity == "" {
@@ -98,7 +105,7 @@ func main() {
 	if *dockerContext != "" {
 		os.Setenv("DOCKER_CONTEXT", *dockerContext)
 	}
-	if err := dashboard.Run(dashboard.Options{User: *user, Docker: *docker, Filter: *filter, ActiveOnly: *activeOnly, Kubectl: *kubectl}); err != nil {
+	if err := dashboard.Run(dashboard.Options{User: *user, Docker: *docker, Filter: *filter, ActiveOnly: *activeOnly, Kubectl: *kubectl, Prometheus: *prometheus}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

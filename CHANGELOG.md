@@ -4,6 +4,14 @@ Changes are recorded here before being assigned a release tag.
 
 ## Unreleased
 
+## v0.4.0 - 2026-10-27
+
+A Metrics suite: Prometheus trend panels, targets, pinned metrics and exporter setup from inside the terminal.
+
+### Added
+
+- A sixth suite, **6 · Metrics**, visualises a Prometheus server: built-in trend panels for node_exporter, cAdvisor (standalone or kubelet), Proxmox VE (`prometheus-pve-exporter`) and Prometheus itself, drawn with the shared block/braille/ASCII renderers plus a bar variant, each with an axis naming the window's peak, pressure colours only for values that have a ceiling and gaps for missing samples, and a full-screen view per panel that flicks between panels with the arrow keys; a targets view with scrape state, errors, server version and configuration reload status; pinned metrics chosen from the server's metric names and saved in settings; a host chooser for multi-instance servers; and a setup view that detects the package manager, Docker and Proxmox and offers install steps through the usual approval card, with `sudo` steps authorised like other actions. The server is named with `--prometheus`, `SYSTEMDOC_PROMETHEUS` or `prometheus_url`, or detected from a running Prometheus service or container; **Open in Metrics** appears in the Actions menu for Prometheus and exporter workloads. A bearer token from `SYSTEMDOC_PROMETHEUS_TOKEN` is never stored. The client lives in `internal/promapi` with bounded requests, no redirects and system TLS roots only.
+
 ## v0.3.0 - 2026-10-26
 
 Live GPU telemetry and per-process GPU readings, CPU core inspection, and independently testable backend collectors.

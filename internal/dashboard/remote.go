@@ -42,6 +42,12 @@ func (w *workspace) remoteDialog() {
 		if userScope.IsChecked() {
 			options.Args = []string{"--user"}
 		}
+		// A URL from the flag or environment names the remote host's own
+		// loopback once it runs there; a settings value stays local because the
+		// remote user has their own settings file.
+		if endpoint := strings.TrimSpace(os.Getenv("SYSTEMDOC_PROMETHEUS")); endpoint != "" {
+			options.Args = append(options.Args, "--prometheus", endpoint)
+		}
 		if err := options.Validate(); err != nil {
 			status.SetText(" " + err.Error()).SetTextColor(tcell.GetColor(w.palette().error))
 			return

@@ -31,7 +31,7 @@ type networkPage struct {
 	summary                *tview.Flex
 	cards                  [3]*tview.TextView
 	buttons                [4]*tview.Button
-	modeButtons            [5]*tview.Button
+	modeButtons            [6]*tview.Button
 	snapshot               hostnet.Snapshot
 	visible                []hostnet.Socket
 	interfaces             []hostnet.Interface
@@ -55,10 +55,7 @@ func (n *networkPage) Draw(screen tcell.Screen) {
 		n.lastWidth, n.lastHeight = width, height
 		setSuiteLabels(n.modeButtons[:], width, n.w.settings.NerdIcons)
 		for i, button := range n.modeButtons {
-			buttonWidth := suiteButtonWidths[i]
-			if width < 100 {
-				buttonWidth = max(6, width/5)
-			}
+			buttonWidth := suiteButtonWidth(i, width)
 			n.suiteNavigation.ResizeItem(button, buttonWidth, 0)
 		}
 		deckWidth := controlButtonWidth(n.deckButton.GetLabel())
@@ -220,7 +217,7 @@ func (w *workspace) networkPage() {
 			n.updateStatus()
 		case 'e':
 			w.reviewSnapshot(n.report())
-		case '1', '2', '4', '5':
+		case '1', '2', '4', '5', '6':
 			n.close()
 			w.openHostTab(int(e.Rune() - '1'))
 		case 'p':
@@ -847,3 +844,6 @@ func (n *networkPage) processDetails(s hostnet.Socket) {
 		})
 	}()
 }
+
+func (n *networkPage) suiteIndex() int { return 2 }
+func (n *networkPage) focusPrimary()   { n.w.app.SetFocus(n.table) }

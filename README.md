@@ -43,13 +43,13 @@ systemdoc --docker               # Docker containers
 systemdoc --filter state:failed  # focus on failures
 ```
 
-## Five feature suites
+## Six feature suites
 
 ![Containers suite showing a single-node k0s stack with a crash-looping pod selected](docs/assets/containers.png)
 
 *The Containers suite with a k0s stack: Docker containers and Kubernetes pods in one list, the Attention filter on, and a crash-looping pod's overview with its events.*
 
-Press `0` anywhere in the live workspace to open the **Control Deck**. It explains and opens the five numbered suites, so a first-time user can understand the product without memorising commands.
+Press `0` anywhere in the live workspace to open the **Control Deck**. It explains and opens the six numbered suites, so a first-time user can understand the product without memorising commands.
 
 | Suite | What it is for | Rich workflows |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ The suites share one visual language, polling interval, keyboard model, theme sy
 
 | Key | Use it for |
 | --- | --- |
-| `0` | Open the five-suite Control Deck |
+| `0` | Open the six-suite Control Deck |
 | `1` / `2` | Services / containers |
 | `3` | Ports and networking |
 | `4` | Process Explorer |
