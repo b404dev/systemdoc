@@ -734,27 +734,6 @@ func (m *metricsPage) movePanel(key tcell.Key) {
 	}
 }
 
-// inspectPanel shows every series of the selected panel in a dialog.
-func (m *metricsPage) inspectPanel() {
-	if m.selected >= len(m.panels) {
-		return
-	}
-	panel := m.panels[m.selected]
-	var lines []string
-	for _, series := range panel.series {
-		label := series.label
-		if label == "" {
-			label = panel.spec.Title
-		}
-		lines = append(lines, fmt.Sprintf("%-32s %s", ellipsize(textutil.Clean(label), 32), formatMetric(series.latest, panel.spec.Unit)))
-	}
-	if len(lines) == 0 {
-		lines = []string{"no data"}
-	}
-	expr := panel.spec.Expr(m.selectors()[panel.family])
-	m.w.message(panel.spec.Title, strings.Join(lines, "\n")+"\n\n"+textutil.Clean(expr))
-}
-
 // chooseInstance lets the user pick which scraped host a family shows.
 func (m *metricsPage) chooseInstance() {
 	if m.selected >= len(m.panels) {
