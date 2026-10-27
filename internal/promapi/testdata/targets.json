@@ -1,0 +1,4 @@
+{"status":"success","data":{"activeTargets":[
+ {"discoveredLabels":{},"labels":{"instance":"localhost:9100","job":"node"},"scrapePool":"node","scrapeUrl":"http://localhost:9100/metrics","globalUrl":"http://localhost:9100/metrics","lastError":"","lastScrape":"2024-05-01T10:00:00.123456789Z","lastScrapeDuration":0.0123,"health":"up","scrapeInterval":"15s","scrapeTimeout":"10s"},
+ {"discoveredLabels":{},"labels":{"instance":"pve:9221","job":"pve"},"scrapePool":"pve","scrapeUrl":"http://pve:9221/pve","globalUrl":"http://pve:9221/pve","lastError":"Get \"http://pve:9221/pve\": dial tcp: connection refused\nsecond line","lastScrape":"0001-01-01T00:00:00Z","lastScrapeDuration":0,"health":"down","scrapeInterval":"30s","scrapeTimeout":"10s"}
+],"droppedTargets":[]}}

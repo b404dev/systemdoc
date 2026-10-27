@@ -18,9 +18,18 @@ import (
 	"systemdoc/internal/textutil"
 )
 
-var hostTabNames = []string{"SERVICES", "CONTAINERS", "NETWORK", "PROCESSES", "STORAGE"}
-var hostTabIcons = []iconRole{iconServices, iconContainers, iconNetwork, iconProcesses, iconStorage}
-var suiteButtonWidths = []int{15, 15, 14, 15, 14}
+var hostTabNames = []string{"SERVICES", "CONTAINERS", "NETWORK", "PROCESSES", "STORAGE", "METRICS"}
+var hostTabIcons = []iconRole{iconServices, iconContainers, iconNetwork, iconProcesses, iconStorage, iconMetrics}
+var suiteButtonWidths = []int{15, 15, 14, 15, 14, 14}
+
+// suiteButtonWidth is the rail cell for suite i; narrow terminals share the
+// width evenly so every numbered suite stays reachable.
+func suiteButtonWidth(i, width int) int {
+	if width < 100 {
+		return max(6, width/len(hostTabNames))
+	}
+	return suiteButtonWidths[i]
+}
 
 // tview centres a button label inside its cell, so a button sized to its exact
 // label leaves no gap and the next label reads as part of this one. The extra
@@ -33,7 +42,7 @@ func setSuiteLabels(buttons []*tview.Button, width int, nerd bool) {
 	for i, button := range buttons {
 		name := hostTabNames[i]
 		if width < 100 {
-			name = []string{"SVC", "CTR", "NET", "PROC", "DISK"}[i]
+			name = []string{"SVC", "CTR", "NET", "PROC", "DISK", "METR"}[i]
 		}
 		button.SetLabel(fmt.Sprintf("%d %s %s", i+1, iconFor(nerd, hostTabIcons[i]), name))
 	}
@@ -47,11 +56,13 @@ func (w *workspace) openHostTab(tab int) {
 		w.networkPage()
 	case 3, 4:
 		w.hostPage(tab)
+	case 5:
+		w.metricsPage()
 	}
 }
 
 // hostNavigation is the suite rail every non-main page shares with the main
-// dashboard: five numbered suites on the left, a spacer, and the controls that
+// dashboard: six numbered suites on the left, a spacer, and the controls that
 // apply everywhere on the right. Matching the main rail's geometry is what
 // keeps the top bar from reshuffling when the user changes suite.
 func (w *workspace) hostNavigation(active int, choose func(int)) (*tview.Flex, []*tview.Button, *tview.Button) {
@@ -135,7 +146,7 @@ type hostPage struct {
 	lastPoll                        time.Time
 	note                            [2]string
 	failure                         [2]string
-	modeButtons                     [5]*tview.Button
+	modeButtons                     [6]*tview.Button
 	viewButtons                     [2]*tview.Button
 	deckButton                      *tview.Button
 	width, height                   int
@@ -199,11 +210,7 @@ func (h *hostPage) Draw(screen tcell.Screen) {
 		h.width, h.height = width, height
 		setSuiteLabels(h.modeButtons[:], width, h.w.settings.NerdIcons)
 		for i, button := range h.modeButtons {
-			buttonWidth := suiteButtonWidths[i]
-			if width < 100 {
-				buttonWidth = max(6, width/5)
-			}
-			h.navigation.ResizeItem(button, buttonWidth, 0)
+			h.navigation.ResizeItem(button, suiteButtonWidth(i, width), 0)
 		}
 		deckWidth := controlButtonWidth(h.deckButton.GetLabel())
 		if width < 140 {
@@ -392,7 +399,7 @@ func (h *hostPage) input(e *tcell.EventKey) *tcell.EventKey {
 		w.controlDeck()
 	case ',':
 		w.pollingDialog()
-	case '1', '2', '3', '4', '5':
+	case '1', '2', '3', '4', '5', '6':
 		target := int(e.Rune() - '1')
 		if target != h.tab {
 			h.close()
@@ -1226,3 +1233,6 @@ func (h *hostPage) deletedRows() ([]string, [3]hostCard) {
 		{title: "OWNERS", headline: fmt.Sprintf("%d processes", len(owners)), visual: "Still holding files open", note: "Sampled by lsof +L1"},
 	}
 }
+
+func (h *hostPage) suiteIndex() int { return h.tab }
+func (h *hostPage) focusPrimary()   { h.w.app.SetFocus(h.table) }

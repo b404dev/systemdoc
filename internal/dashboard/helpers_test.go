@@ -75,3 +75,5 @@ func hostReadoutFor(p palette, usage hostUtilisation, width int) string {
 	}
 	return "   " + hostReadout(p, usage, width)
 }
+
+func resetPrometheusState() { resetPrometheus() }

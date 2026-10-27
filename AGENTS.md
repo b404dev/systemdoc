@@ -28,6 +28,7 @@ All paths below are relative to `internal/dashboard/` unless stated otherwise.
 | Logs | `logs.go`, `log_*.go` |
 | Reviewed actions and commands | `authorization.go`, `operations.go`, `commands.go`, `sudo.go` |
 | Settings and themes | `settings.go`, `preferences.go`, `themes.go`, `style.go`, `icons.go` |
+| Prometheus and the Metrics suite | `metrics_*.go`, `prometheus*.go`, `internal/promapi/` (repository root) |
 | SSH | `remote.go`, `internal/remote/` (repository root) |
 
 Read related `*_test.go` files as needed. `helpers_test.go` contains adapters
@@ -37,7 +38,7 @@ check both implementations when changing shared contracts.
 
 The extracted packages do not import `dashboard`, tview or tcell. Keep that
 boundary: collection and parsing belong outside the UI. Their tests run with
-`go test ./internal/hostnet ./internal/dockerinspect ./internal/commandcapture`;
+`go test ./internal/hostnet ./internal/dockerinspect ./internal/commandcapture ./internal/promapi`;
 they do not require loading dashboard fixtures or starting terminal screens.
 
 ## Documentation and assets

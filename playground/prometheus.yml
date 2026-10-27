@@ -1,0 +1,15 @@
+# Scrape configuration for the playground Prometheus. Targets are the
+# node-exporter and cAdvisor containers on the compose network.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']

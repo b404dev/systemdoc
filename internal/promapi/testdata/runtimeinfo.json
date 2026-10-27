@@ -1,0 +1,1 @@
+{"status":"success","data":{"startTime":"2024-05-01T08:00:00Z","CWD":"/prometheus","reloadConfigSuccess":true,"lastConfigTime":"2024-05-01T08:00:01Z","corruptionCount":0,"goroutineCount":40,"GOMAXPROCS":8,"GOMEMLIMIT":0,"GOGC":"75","GODEBUG":"","storageRetention":"15d","timeSeriesCount":48213}}

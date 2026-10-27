@@ -45,16 +45,16 @@ func TestSavedViewRestoresWorkspaceAndRoundTrips(t *testing.T) {
 	}
 }
 
-func TestControlDeckDocumentsFiveSuites(t *testing.T) {
+func TestControlDeckDocumentsSixSuites(t *testing.T) {
 	w := testWorkspace()
 	w.controlDeck()
 	_, page := w.pages.GetFrontPage()
 	panel := page.(*overlay).content.(*tview.Flex)
 	list := panel.GetItem(1).(*tview.List)
-	if list.GetItemCount() != 5 {
+	if list.GetItemCount() != 6 {
 		t.Fatalf("control deck has %d suites", list.GetItemCount())
 	}
-	for i, want := range []string{"SERVICES", "CONTAINERS", "NETWORK", "PROCESSES", "STORAGE"} {
+	for i, want := range hostTabNames {
 		name, description := list.GetItemText(i)
 		if !strings.Contains(name, want) || strings.TrimSpace(description) == "" {
 			t.Fatalf("suite %d is not self-documenting: %q / %q", i, name, description)

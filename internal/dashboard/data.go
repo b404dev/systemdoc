@@ -32,6 +32,9 @@ type workload struct {
 	MemoryPeak, IORead, IOWrite uint64
 	HasMemoryPeak, HasIO        bool
 	CGroup                      string
+	// Ports is the docker ps publish list ("0.0.0.0:9090->9090/tcp, :::9090->9090/tcp"),
+	// kept so endpoint discovery needs no second inspection.
+	Ports string
 	// Stats is the container's docker stats JSON line from the bulk sample.
 	Stats string
 }
@@ -159,11 +162,11 @@ func listDockerContainers(ctx context.Context) ([]workload, error) {
 		if line == "" {
 			continue
 		}
-		var row struct{ ID, Names, State, Status, Image, Labels string }
+		var row struct{ ID, Names, State, Status, Image, Labels, Ports string }
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
 			return nil, err
 		}
-		result = append(result, workload{ID: row.ID, Name: row.Names, State: row.State, Detail: row.Status, Project: containerProject(row.Labels), Description: row.Image})
+		result = append(result, workload{ID: row.ID, Name: row.Names, State: row.State, Detail: row.Status, Project: containerProject(row.Labels), Description: row.Image, Ports: row.Ports})
 	}
 	return result, nil
 }

@@ -69,3 +69,14 @@ New Docker group membership takes effect after logging out and back in. To use
 it immediately in your current terminal, run `newgrp docker`, then launch
 Systemdoc from that shell. Opening another terminal within an existing desktop
 session may still inherit the old groups.
+
+## Prometheus and exporters
+
+The compose project also starts Prometheus on `127.0.0.1:9090` with a two-hour
+retention, a node-exporter and cAdvisor, scraped every 15 seconds from
+`prometheus.yml`. Systemdoc detects the `prom/prometheus` container and opens
+it in the Metrics suite (`6`) without configuration; **Actions → Open in
+Metrics** on the container does the same. On macOS the node-exporter reports
+the Docker Desktop virtual machine, not the Mac; the cAdvisor panels still
+describe the playground containers. Stop Prometheus (`docker compose stop
+prometheus`) to see the unreachable state and the setup view.

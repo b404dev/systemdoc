@@ -35,6 +35,7 @@ const (
 	iconLock
 	iconStoryline
 	iconConstellation
+	iconMetrics
 )
 
 type iconPair struct{ nerd, fallback string }
@@ -69,6 +70,7 @@ var iconVocabulary = map[iconRole]iconPair{
 	iconLock:          {"\uf023", "!"},
 	iconStoryline:     {"\uf1da", "TIME"},
 	iconConstellation: {"\uf1b3", "MAP"},
+	iconMetrics:       {"\uf201", "MTRC"},
 }
 
 func iconFor(nerd bool, role iconRole) string {

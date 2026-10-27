@@ -358,7 +358,8 @@ func (w *workspace) buildDashboard() {
 	w.toolbarButtons = append(w.toolbarButtons, network)
 	w.commandBar.AddItem(network, suiteButtonWidths[2], 0, false)
 	for i, label := range initialSuiteLabels[3:] {
-		button := tview.NewButton(label).SetSelectedFunc(func() { w.hostPage(i + 3) })
+		suite := i + 3
+		button := tview.NewButton(label).SetSelectedFunc(func() { w.openHostTab(suite) })
 		w.toolbarButtons = append(w.toolbarButtons, button)
 		w.commandBar.AddItem(button, suiteButtonWidths[i+3], 0, false)
 	}
@@ -432,14 +433,10 @@ func (w *workspace) layoutDashboard(width, height int) {
 	}
 	w.lastWidth, w.lastHeight, w.layoutDetail = width, height, focusDetail
 	w.root.Clear()
-	suiteButtons := append(w.modeButtons[:], w.toolbarButtons[:3]...)
+	suiteButtons := append(w.modeButtons[:], w.toolbarButtons[:len(hostTabNames)-2]...)
 	setSuiteLabels(suiteButtons, width, w.settings.NerdIcons)
 	for i, button := range suiteButtons {
-		buttonWidth := suiteButtonWidths[i]
-		if width < 100 {
-			buttonWidth = max(6, width/5)
-		}
-		w.commandBar.ResizeItem(button, buttonWidth, 0)
+		w.commandBar.ResizeItem(button, suiteButtonWidth(i, width), 0)
 	}
 	headerHeight := mastheadHeight(width, height)
 	w.header.SetBorderPadding(0, 0, 1, 0)
@@ -503,7 +500,7 @@ func (w *workspace) styleDashboard() {
 	}
 	w.table.SetBorderAttributes(tcell.AttrBold)
 	w.detail.SetBorderAttributes(tcell.AttrBold)
-	w.commandBar.GetItem(5).(*tview.Box).SetBackgroundColor(tcell.GetColor(p.background))
+	w.commandBar.GetItem(len(hostTabNames)).(*tview.Box).SetBackgroundColor(tcell.GetColor(p.background))
 	w.table.SetTitle(" " + w.iconLabel(iconEye, "WORKLOADS · S sort · Enter inspect ")).SetTitleColor(tcell.GetColor(p.accent))
 	w.table.SetSelectedStyle(tcell.StyleDefault.Background(tcell.GetColor(p.accent)).Foreground(tcell.GetColor(p.background)).Bold(true))
 	w.header.SetBackgroundColor(tcell.GetColor(p.background))

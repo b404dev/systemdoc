@@ -19,13 +19,19 @@ A minimal settings file is:
   "splash": true,
   "wrap_logs": false,
   "nerd_icons": true,
-  "systemd_active_only": false
+  "systemd_active_only": false,
+  "prometheus_url": "http://localhost:9090",
+  "prometheus_metrics": [
+    {"title": "Open files", "name": "process_open_fds", "selector": "{job=\"prometheus\"}", "unit": "count"}
+  ]
 }
 ```
 
 Missing settings use defaults. Unknown theme names resolve to Cathedral; legacy Deep names resolve to the nearest Observatory palette. Invalid refresh intervals resolve to five seconds. `graph_mode` accepts `blocks`, `braille`, or `ascii`; invalid values fall back to blocks. Press `G` to cycle it without opening Preferences. Five [Observatory themes](../THEMES.md) are supplied. `accent` and `background` accept `#RRGGBB` strings; blank values restore preset colours. Existing overrides survive theme migration. `nerd_icons` defaults to `true`; the first Observatory-era read promotes the former off-by-default value once, after which setting it to `false` under Preferences is retained as the labeled Unicode/ASCII fallback.
 
 `SYSTEMDOC_KUBECTL` (or `--kubectl`) pins the kubectl invocation used for Kubernetes pods in the Containers suite, for example `k0s kubectl` or `kubectl --context kind-dev`; leave it unset to detect the stack automatically.
+
+`--prometheus URL` (or `SYSTEMDOC_PROMETHEUS`) names the Prometheus server for the Metrics suite and overrides `prometheus_url` in settings; with neither, a running Prometheus service or container is detected, and failing that `http://localhost:9090` is tried. An optional bearer token is read from `SYSTEMDOC_PROMETHEUS_TOKEN`; it is never written to settings and is not forwarded over SSH. The flag and environment value are forwarded to a remote host, where they name that host's own loopback; the settings value is not, because the remote user has their own settings. `prometheus_metrics` holds pinned panels (`title`, `name`, optional `selector`, `unit`, `rate`, `ceiling`) and `prometheus_instances` remembers which scraped host each exporter family shows. See [the Metrics suite](prometheus.md).
 
 `i` toggles active-only filtering and saves the systemd choice. Docker's filter is session-local. `--active-only` enables it at startup. Favourites and registered Compose project definitions are also saved. Configure projects through the project menu so file ordering, working directory, profiles, environment files, and Docker endpoint are explicit.
 

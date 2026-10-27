@@ -146,6 +146,7 @@ func (w *workspace) actions() {
 	add("Ports and networking", "Find port owners, connections and host interfaces", w.networkPage)
 	add("Process explorer", "CPU, memory, parent trees and process ports", func() { w.hostPage(3) })
 	add("Disk and storage", "Mount usage, inode pressure and deleted open files", func() { w.hostPage(4) })
+	add("Metrics", "Prometheus trends, pinned metrics, scrape targets and setup", func() { w.openMetrics(promEndpoint{}, "") })
 	add("Saved views", "Save and restore filters, sorting and layout", w.savedViews)
 	if !usesLaunchd() {
 		add("Systemd timers", "Browse next and last runs in the current system/user scope", w.timers)
@@ -210,6 +211,11 @@ func (w *workspace) actions() {
 			add("Journal: errors and worse only · "+errorsState, "Toggle journalctl --priority 0..3 for the Logs tab and drawer", func() { w.toggleLogFilter(true) })
 			add("Journal: since this boot · "+bootState, "Toggle journalctl --boot so older boots are left out", func() { w.toggleLogFilter(false) })
 		}
+	}
+	if endpoint, ok := prometheusWorkload(w.mode, item); ok {
+		add("Open in Metrics · "+item.Name, "Prometheus at "+endpoint.URL+" · suite 6", func() { w.openMetrics(endpoint, "targets") })
+	} else if family, ok := metricsFamilyFor(item); ok && item.ID != "" {
+		add("Open in Metrics · "+item.Name, "Jump to this exporter's panels in suite 6", func() { w.openMetrics(promEndpoint{}, family) })
 	}
 	if w.mode == 1 && item.ID != "" {
 		add("Trace with sysdig", "Syscalls, files, connections and errors of this workload · needs sudo", func() { w.sysdigForWorkload(item) })

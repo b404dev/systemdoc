@@ -1,0 +1,5 @@
+{"status":"success","data":{"resultType":"vector","result":[
+ {"metric":{"__name__":"node_load1","instance":"localhost:9100","job":"node"},"value":[1700000000.123,"1.25"]},
+ {"metric":{"__name__":"node_load1","instance":"\u001b[31mevil\u001b[0m:9100","job":"node"},"value":[1700000000,"NaN"]},
+ {"metric":{"__name__":"node_load1","instance":"third:9100","job":"node"},"value":[1700000000,"+Inf"]}
+]}}

@@ -5,25 +5,29 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type settings struct {
-	SettingsVersion   int                      `json:"settings_version,omitempty"`
-	Views             []savedView              `json:"saved_views,omitempty"`
-	SystemdActiveOnly bool                     `json:"systemd_active_only"`
-	SSHConnections    map[string]sshPreference `json:"ssh_connections,omitempty"`
-	Theme             string                   `json:"theme"`
-	RefreshSeconds    int                      `json:"refresh_seconds"`
-	Projects          []project                `json:"projects,omitempty"`
-	Favorites         []string                 `json:"favorites,omitempty"`
-	Layout            string                   `json:"layout,omitempty"`
-	PaneRatio         int                      `json:"pane_ratio,omitempty"`
-	WrapLogs          bool                     `json:"wrap_logs"`
-	Splash            bool                     `json:"splash"`
-	NerdIcons         bool                     `json:"nerd_icons"`
-	Accent            string                   `json:"accent,omitempty"`
-	Background        string                   `json:"background,omitempty"`
-	GraphMode         string                   `json:"graph_mode,omitempty"`
+	SettingsVersion     int                      `json:"settings_version,omitempty"`
+	Views               []savedView              `json:"saved_views,omitempty"`
+	SystemdActiveOnly   bool                     `json:"systemd_active_only"`
+	SSHConnections      map[string]sshPreference `json:"ssh_connections,omitempty"`
+	Theme               string                   `json:"theme"`
+	RefreshSeconds      int                      `json:"refresh_seconds"`
+	Projects            []project                `json:"projects,omitempty"`
+	Favorites           []string                 `json:"favorites,omitempty"`
+	Layout              string                   `json:"layout,omitempty"`
+	PaneRatio           int                      `json:"pane_ratio,omitempty"`
+	WrapLogs            bool                     `json:"wrap_logs"`
+	Splash              bool                     `json:"splash"`
+	NerdIcons           bool                     `json:"nerd_icons"`
+	Accent              string                   `json:"accent,omitempty"`
+	Background          string                   `json:"background,omitempty"`
+	GraphMode           string                   `json:"graph_mode,omitempty"`
+	PrometheusURL       string                   `json:"prometheus_url,omitempty"`
+	PrometheusMetrics   []pinnedMetric           `json:"prometheus_metrics,omitempty"`
+	PrometheusInstances map[string]string        `json:"prometheus_instances,omitempty"`
 }
 
 func settingsPath() (string, error) {
@@ -68,6 +72,10 @@ func readSettings() (settings, error) {
 	}
 	s.Theme = themes[themeIndex(s.Theme)].name
 	s.GraphMode = graphMode(s.GraphMode)
+	s.PrometheusURL = strings.TrimSpace(s.PrometheusURL)
+	if len(s.PrometheusMetrics) > maxPinnedMetrics {
+		s.PrometheusMetrics = s.PrometheusMetrics[:maxPinnedMetrics]
+	}
 	return s, nil
 }
 
